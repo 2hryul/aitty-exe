@@ -8,6 +8,7 @@ import { ai, ssh } from '@bridge/ipcBridge'
 import { logger } from '@utils/logger'
 import { AISettingsPanel } from '@components/AISettingsPanel'
 import ChatPanel from '@components/ChatPanel'
+import SecurityPanel from '@components/SecurityPanel'
 import '@styles/chat.css'
 
 interface AITerminalProps {
@@ -18,7 +19,7 @@ export function AITerminal({ sshConnected }: AITerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
-  const [activeTab, setActiveTab] = useState<'chat' | 'cli'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'cli' | 'security'>('chat')
 
   const hook = useAITerminal()
   const {
@@ -183,7 +184,7 @@ export function AITerminal({ sshConnected }: AITerminalProps) {
     }
     containerEl?.addEventListener('contextmenu', handleContextMenu)
 
-    logger.info('Local LLM Terminal initialized')
+    logger.info('LLM Terminal initialized')
 
     return () => {
       containerEl?.removeEventListener('contextmenu', handleContextMenu)
@@ -243,7 +244,7 @@ export function AITerminal({ sshConnected }: AITerminalProps) {
   return (
     <div className="ai-terminal local-llm-terminal">
       <div className="terminal-header">
-        <h2>Local LLM Terminal</h2>
+        <h2>LLM Terminal</h2>
         <div className="terminal-status">
           {isConfigured && !(requiresApiKey && !apiKey) ? (
             <>
@@ -314,13 +315,19 @@ export function AITerminal({ sshConnected }: AITerminalProps) {
           className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
           onClick={() => setActiveTab('chat')}
         >
-          💬 Chat
+          <span className="tab-icon">◉</span> Chat
         </button>
         <button
           className={`tab-btn ${activeTab === 'cli' ? 'active' : ''}`}
           onClick={() => setActiveTab('cli')}
         >
-          ⌨️ CLI
+          <span className="tab-icon">$_</span> CLI
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'security' ? 'active' : ''}`}
+          onClick={() => setActiveTab('security')}
+        >
+          <span className="tab-icon">🛡</span> 보안점검
         </button>
       </div>
 
@@ -341,6 +348,11 @@ export function AITerminal({ sshConnected }: AITerminalProps) {
           <div className="terminal-container" style={{ flex: 1 }}>
             <div ref={terminalRef} className="terminal-content" />
           </div>
+        </div>
+
+        {/* Security Tab */}
+        <div className={`tab-pane ${activeTab !== 'security' ? 'hidden' : ''}`}>
+          <SecurityPanel sshConnected={sshConnected} />
         </div>
       </div>
 

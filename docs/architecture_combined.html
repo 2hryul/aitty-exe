@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aitty.exe 아키텍처 다이어그램 뷰어</title>
+    
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ 
+            startOnLoad: true, 
+            theme: 'default',
+            securityLevel: 'loose'
+        });
+    </script>
+
+    <style>
+        body {
+            font-family: 'Malgun Gothic', 'Segoe UI', sans-serif;
+            background-color: #e9ecef;
+            margin: 0;
+            padding: 20px;
+            color: #343a40;
+        }
+        h1 {
+            text-align: center;
+            color: #212529;
+            margin-bottom: 10px;
+        }
+        .description {
+            text-align: center;
+            color: #6c757d;
+            margin-bottom: 30px;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin-bottom: 40px;
+            padding: 30px;
+            /* 가로 스크롤을 허용하여 그림이 작아지는 것을 방지 */
+            overflow-x: auto; 
+        }
+        .card h2 {
+            margin-top: 0;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 10px;
+        }
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            /* 다이어그램이 너무 축소되지 않도록 최소 너비 지정 */
+            min-width: 900px; 
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Aitty.exe 시스템 아키텍처 시각화</h1>
+    <p class="description">마우스 휠이나 트랙패드를 이용해 스크롤하며 크게 확인하세요.</p>
+
+    <div class="card">
+        <h2>1️⃣ 데스크톱 백엔드 구조 (WPF & Services)</h2>
+        <div class="mermaid">
+            graph TB
+                subgraph DESKTOP["🖥️ 데스크톱 백엔드 (WPF .NET 8)"]
+                    direction TB
+                    WPF["WPF Shell<br/>(MainWindow / App)"]
+                    subgraph IPC["IPC 허브 (IpcHandler)"]
+                        direction LR
+                        I_SSH["ssh:*"]
+                        I_AI["ai:*"]
+                        I_CFG["config:*"]
+                        I_SEC["security:*"]
+                    end
+                    subgraph SERVICES["서비스 레이어"]
+                        AI["AI 서비스 매니저<br/>(Ollama / Claude / OpenAI / Gemini)"]
+                        SSH["SshService<br/>(SSH.NET)"]
+                        DPAPI["보안 저장소<br/>(DPAPI 암호화)"]
+                    end
+                    WPF -->|"WebView2 초기화"| IPC
+                    IPC --> SERVICES
+                    I_AI --> AI
+                    I_SSH --> SSH
+                    I_CFG --> DPAPI
+                    AI --> DPAPI
+                end
+                classDef wpf fill:#1a237e,stroke:#5c6bc0,color:#fff
+                classDef ipc fill:#4a148c,stroke:#ce93d8,color:#fff
+                classDef service fill:#006064,stroke:#00bcd4,color:#fff
+                class WPF wpf
+                class IPC,I_SSH,I_AI,I_CFG,I_SEC ipc
+                class SERVICES,AI,SSH,DPAPI service
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>2️⃣ 프론트엔드 구조 (React WebView)</h2>
+        <div class="mermaid">
+            graph TB
+                subgraph WEBVIEW["🌐 프론트엔드 (React 19 + Vite)"]
+                    direction TB
+                    MAIN["App.tsx (2-패널 레이아웃)"]
+                    subgraph UI["화면 구성 (Components)"]
+                        direction LR
+                        LEFT["좌측 패널<br/>(SSH 터미널 / xterm.js)"]
+                        RIGHT["우측 패널<br/>(LLM 터미널 / 3개 탭)"]
+                        TABS["💬 Chat | 💻 CLI | 🛡 보안점검"]
+                        RIGHT --> TABS
+                    end
+                    subgraph LOGIC["핵심 로직 (Hooks & Utils)"]
+                        H_AI["useAITerminal.ts<br/>(834 LoC 상태머신)"]
+                        SAFETY["commandSafety.ts<br/>(위험 명령어 차단)"]
+                        BRIDGE["ipcBridge.ts<br/>(WPF와 통신)"]
+                    end
+                    MAIN --> UI
+                    LEFT --> BRIDGE
+                    RIGHT --> H_AI
+                    H_AI --> BRIDGE
+                    TABS --> SAFETY
+                end
+                classDef react fill:#1b5e20,stroke:#66bb6a,color:#fff
+                classDef hook fill:#004d40,stroke:#26a69a,color:#fff
+                class WEBVIEW,MAIN,UI,LEFT,RIGHT,TABS react
+                class LOGIC,H_AI,SAFETY,BRIDGE hook
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>3️⃣ 외부 시스템 통신 흐름 (Data Flow)</h2>
+        <div class="mermaid">
+            graph LR
+                FRONTEND["🌐 React (WebView2)"] <-->|"JSON-RPC<br/>(postMessage)"| BACKEND["🖥️ C# WPF (IPC Hub)"]
+                BACKEND <-->|"SSH (Port 22)"| LINUX["🐧 Linux Server"]
+                BACKEND <-->|"HTTPS Stream"| AI_API["☁️ AI API<br/>(Claude, OpenAI 등)"]
+                subgraph SEC["보안 작업"]
+                    SCP["SCP로 스크립트 업로드"] --> LINUX
+                end
+                FRONTEND -.->|"보안점검 탭 실행"| SCP
+                classDef external fill:#b71c1c,stroke:#ef5350,color:#fff
+                class LINUX,AI_API external
+        </div>
+    </div>
+
+
+  <hr style="border:none;border-top:3px solid #dee2e6;margin:60px 0;">
+  
+
+    <h1>Aitty.exe 명령어 보안 필터링 흐름 (Command Safety)</h1>
+    <p class="description">LLM이 생성한 쉘 명령어를 실행하기 전, 3단계(🔴DANGER, 🟠CAUTION, 🟡WARNING)로 위험도를 검사하는 프로세스입니다.</p>
+
+    <div class="card">
+        <div class="mermaid">
+flowchart TD
+    A["코드 블록 렌더링"] --> B{"언어 태그 있음?<br/>or 멀티라인?"}
+    B -->|"No — 인라인"| C["일반 code 태그<br/>Run 버튼 없음"]
+    B -->|"Yes — 블록"| D["CodeBlock 컴포넌트"]
+    
+    D --> E{"isShellLang?<br/>bash/sh/zsh/shell/console<br/>text/terminal/linux/cmd<br/>command/powershell/fish"}
+    E -->|No| F["✅ safe → ▶ Run"]
+    E -->|Yes| G["checkCommandSafety<br/>firstLine 추출"]
+    
+    G --> H{"🔴 DANGER?<br/>rm -rf / · mkfs · dd<br/>shutdown · reboot<br/>fork bomb · init 0/6"}
+    H -->|Yes| I["🚫 Blocked<br/>disabled +<br/>pointer-events:none"]
+    
+    H -->|No| J{"🟠 CAUTION?<br/>kill -9 1 · iptables -F<br/>userdel · ifconfig down<br/>systemctl stop"}
+    J -->|Yes| K["⚠️ 확인 필요<br/>yes 입력 시만 실행"]
+    
+    J -->|No| L{"🟡 WARNING?<br/>curl pipe bash<br/>fdisk · parted<br/>wget pipe bash"}
+    L -->|Yes| M["⚠ Run<br/>경고 배너 3초"]
+    
+    L -->|No| F
+
+    style I fill:#b71c1c,stroke:#f44336,color:#fff
+    style K fill:#e65100,stroke:#ff9800,color:#fff
+    style M fill:#f57f17,stroke:#ffc107,color:#000
+    style F fill:#1b5e20,stroke:#4caf50,color:#fff
+    style C fill:#37474f,stroke:#78909c,color:#fff
+        </div>
+    </div>
+
+
+  <hr style="border:none;border-top:3px solid #dee2e6;margin:60px 0;">
+  
+
+    <h1>Aitty.exe 스트리밍 메시지 처리 흐름</h1>
+    <p class="description">React 프론트엔드와 WPF 백엔드 간의 AI 스트리밍 통신 과정입니다.</p>
+
+    <div class="card">
+        <div class="mermaid">
+sequenceDiagram
+    participant U as 👤 사용자
+    participant R as ⚛️ React (useAITerminal)
+    participant B as 🔌 ipcBridge.ts
+    participant I as 📡 IpcHandler.cs
+    participant D as 🔄 WPF Dispatcher
+    participant A as 🤖 AI Service
+    participant L as ☁️ LLM API
+
+    U->>R: 메시지 입력 + 전송
+    R->>R: setChatMessages(user msg)
+    R->>B: ai.stream(message, onChunk)
+    B->>I: postMessage(ai:stream)
+    I->>A: SendStreamingAsync(msg, onChunk, ct)
+    A->>L: HTTP POST (stream: true)
+    
+    rect rgb(230, 245, 230)
+        Note over L,R: 스트리밍 루프
+        loop 청크 수신
+            L-->>A: chunk (background thread)
+            A->>D: InvokeAsync(Background, pri=4)
+            Note over D: Input(5) > Background(4)<br/>→ UI 스레드 양보 = 창 이동 가능
+            D->>B: PostWebMessageAsJson(chunk)
+            B-->>R: onChunk(chunk)
+            R->>R: contentRef += chunk
+            Note over R: 80ms throttle<br/>setChatMessages 갱신
+        end
+    end
+    
+    L-->>A: stream 종료
+    A-->>I: response 반환
+    I->>I: await lastChunkOp.Task
+    Note over I: FIFO 보장<br/>마지막 청크 전달 완료 대기
+    I->>B: PostWebMessageAsJson(result)
+    B-->>R: resolve(response)
+    R->>R: finally: isStreaming=false
+        </div>
+    </div>
+
+</body>
+</html>

@@ -2,7 +2,7 @@
   "name": "ssh-ai-terminal",
   "description": "SSH Terminal + AI CLI Integration for Windows",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.5",
   "type": "module",
   "homepage": "./",
   "scripts": {

@@ -1,31 +1,52 @@
 /* ── Tab Switcher ─────────────────────────────── */
 .tab-switcher {
   display: flex;
-  background: #111;
+  background: #0a0a0a;
   border-bottom: 1px solid #333;
-  padding: 0 12px;
+  padding: 4px 12px 0;
+  gap: 4px;
 }
 
 .tab-btn {
-  padding: 8px 16px;
-  font-size: 12px;
+  padding: 8px 22px;
+  font-size: 13px;
   font-weight: 600;
-  color: #888;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
+  letter-spacing: 0.5px;
+  color: #aaa;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
   cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .tab-btn:hover {
-  color: #ccc;
+  color: #ddd;
+  background: #1a1a1a;
+  border-color: #444;
 }
 
 .tab-btn.active {
-  color: #00ff00;
-  border-bottom-color: #00ff00;
+  color: #00ff41;
+  background: #0a180a;
+  border-color: #00cc33;
+  border-bottom: 3px solid #0a180a;
+  margin-bottom: -1px;
+  text-shadow: 0 0 12px rgba(0, 255, 65, 0.6);
+  font-weight: 700;
 }
+
+.tab-icon {
+  font-size: 11px;
+  font-family: monospace;
+  opacity: 0.65;
+  letter-spacing: 0;
+}
+.tab-btn.active .tab-icon { opacity: 1; }
 
 /* ── Chat Panel ──────────────────────────────── */
 .chat-panel {
@@ -230,7 +251,8 @@
   border-color: #f44336;
   color: #f44336;
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.65;
+  pointer-events: none;  /* 클릭 완전 차단 */
 }
 
 .code-action-danger:hover {
@@ -242,27 +264,27 @@
 .code-action-caution {
   border-color: #ff9800;
   color: #ff9800;
-  cursor: not-allowed;
-  opacity: 0.7;
+  cursor: pointer;       /* 클릭 가능 — confirm 다이얼로그 트리거 */
+  opacity: 0.9;
 }
 
 .code-action-caution:hover {
   border-color: #ff9800;
   color: #ff9800;
-  background: rgba(255, 152, 0, 0.1);
+  background: rgba(255, 152, 0, 0.15);
 }
 
 .code-action-warning {
   border-color: #ffc107;
   color: #ffc107;
-  cursor: not-allowed;
-  opacity: 0.7;
+  cursor: pointer;       /* 클릭 가능 — 경고 배너 후 실행 */
+  opacity: 0.9;
 }
 
 .code-action-warning:hover {
   border-color: #ffc107;
   color: #ffc107;
-  background: rgba(255, 193, 7, 0.1);
+  background: rgba(255, 193, 7, 0.15);
 }
 
 .code-action-btn:disabled {
@@ -307,6 +329,93 @@
   padding: 1px 4px;
   border-radius: 2px;
   font-family: 'Consolas', monospace;
+}
+
+/* ── caution: "yes" 확인 입력창 ─────────────── */
+.code-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 152, 0, 0.06);
+  border-top: 1px solid rgba(255, 152, 0, 0.3);
+  flex-wrap: wrap;
+}
+
+.code-confirm-label {
+  font-size: 12px;
+  color: #ff9800;
+  flex: 1;
+  min-width: 160px;
+}
+
+.code-confirm-label code {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ffb74d;
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-family: 'Consolas', monospace;
+}
+
+.code-confirm-input {
+  width: 72px;
+  padding: 4px 8px;
+  background: #111;
+  border: 1px solid #ff9800;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: 'Consolas', monospace;
+  outline: none;
+}
+
+.code-confirm-input:focus {
+  border-color: #ffb74d;
+  box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.15);
+}
+
+.code-confirm-ok {
+  padding: 4px 12px;
+  background: #ff9800;
+  color: #000;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.code-confirm-ok:hover:not(:disabled) { background: #ffb300; }
+.code-confirm-ok:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.code-confirm-cancel {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #888;
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.code-confirm-cancel:hover { color: #ccc; border-color: #666; }
+
+/* ── warning: 일시 경고 배너 ─────────────────── */
+.code-warning-banner {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #ffc107;
+  background: rgba(255, 193, 7, 0.06);
+  border-top: 1px solid rgba(255, 193, 7, 0.25);
+  animation: warnFadeOut 3s forwards;
+}
+
+@keyframes warnFadeOut {
+  0%   { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* ── Thinking Indicator ─────────────────────── */
@@ -441,5 +550,315 @@
 }
 
 .chat-panel::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* ── Security Panel (보안취약점 탭) ────────────────────────── */
+/* ═══════════════════════════════════════════════════════════ */
+
+.security-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #111;
+  font-size: 12px;
+}
+
+/* ── Deploy Section ──────────────────────────── */
+.sec-deploy-section {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.sec-deploy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sec-deploy-label {
+  color: #aaa;
+  font-size: 12px;
+}
+
+.sec-deploy-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.sec-file-list {
+  margin-top: 6px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.sec-file-tag {
+  background: #0a2a0a;
+  border: 1px solid #00cc33;
+  color: #00ff41;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+/* ── Buttons ─────────────────────────────────── */
+.sec-btn {
+  padding: 5px 12px;
+  font-size: 11px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #222;
+  color: #ccc;
+  white-space: nowrap;
+}
+
+.sec-btn:hover:not(:disabled) { background: #333; }
+.sec-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.sec-btn-browse { border-color: #666; }
+.sec-btn-deploy { border-color: #00cc33; color: #00ff41; }
+.sec-btn-deploy:hover:not(:disabled) { background: #0a2a0a; }
+
+.sec-btn-primary {
+  background: #0a2a0a;
+  border-color: #00cc33;
+  color: #00ff41;
+  font-weight: 600;
+}
+
+.sec-btn-secondary {
+  background: #2a2a0a;
+  border-color: #ffc107;
+  color: #ffc107;
+}
+
+.sec-btn-sm {
+  padding: 2px 8px;
+  font-size: 10px;
+  border: 1px solid #444;
+  border-radius: 3px;
+  cursor: pointer;
+  background: #222;
+  color: #aaa;
+}
+
+.sec-btn-sm:hover:not(:disabled) { background: #333; color: #eee; }
+.sec-btn-sm:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.sec-btn-check { border-color: #4caf50; color: #4caf50; }
+.sec-btn-check:hover:not(:disabled) { background: #0a2a0a; }
+.sec-btn-fix { border-color: #ff9800; color: #ff9800; }
+.sec-btn-fix:hover:not(:disabled) { background: #2a1a0a; }
+
+/* ── Action Bar ──────────────────────────────── */
+.sec-action-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.sec-running-indicator {
+  color: #ffc107;
+  font-size: 11px;
+  animation: sec-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sec-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* ── Stats ────────────────────────────────────── */
+.sec-stats {
+  display: flex;
+  gap: 12px;
+  padding: 6px 10px;
+  background: #1a1a1a;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #888;
+}
+
+.sec-stat-pass { color: #4caf50; }
+.sec-stat-fail { color: #f44336; }
+.sec-stat-na { color: #888; }
+.sec-stat-fixed { color: #2196f3; }
+.sec-stat-pending { color: #666; }
+
+/* ── Item Grid ───────────────────────────────── */
+.sec-item-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.sec-item {
+  background: #1a1a1a;
+  border-left: 3px solid #333;
+  border-radius: 0 4px 4px 0;
+  transition: border-color 0.2s;
+}
+
+.sec-item.sec-pass { border-left-color: #4caf50; }
+.sec-item.sec-fail { border-left-color: #f44336; }
+.sec-item.sec-na { border-left-color: #666; }
+.sec-item.sec-fixed { border-left-color: #2196f3; }
+.sec-item.sec-running { border-left-color: #ffc107; }
+.sec-item.sec-error { border-left-color: #ff5722; }
+
+.sec-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.sec-item-header:hover { background: #222; }
+
+.sec-item-id {
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 11px;
+  color: #00ff41;
+  min-width: 40px;
+}
+
+.sec-item-name {
+  flex: 1;
+  color: #ccc;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sec-badge-slow, .sec-badge-k8s {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.sec-item-status {
+  min-width: 70px;
+  text-align: center;
+  font-size: 11px;
+  color: #888;
+}
+
+.sec-item-status.sec-pass { color: #4caf50; }
+.sec-item-status.sec-fail { color: #f44336; }
+.sec-item-status.sec-fixed { color: #2196f3; }
+.sec-item-status.sec-running { color: #ffc107; }
+.sec-item-status.sec-error { color: #ff5722; }
+
+.sec-item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* ── Item Detail (Expandable) ────────────────── */
+.sec-item-detail {
+  padding: 6px 10px 10px 53px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.sec-detail-reason {
+  color: #ddd;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.sec-detail-output {
+  background: #0a0a0a;
+  color: #888;
+  font-family: monospace;
+  font-size: 10px;
+  padding: 8px;
+  border-radius: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Log Section ─────────────────────────────── */
+.sec-log-section {
+  border-top: 1px solid #333;
+  max-height: 150px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sec-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  color: #888;
+  font-size: 11px;
+  background: #1a1a1a;
+}
+
+.sec-log-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px;
+  background: #0a0a0a;
+  font-family: monospace;
+  font-size: 10px;
+}
+
+.sec-log-empty {
+  color: #555;
+  text-align: center;
+  padding: 12px;
+}
+
+.sec-log-line {
+  color: #888;
+  padding: 1px 0;
+  line-height: 1.4;
+}
+
+/* ── Security Panel Scrollbar ────────────────── */
+.security-panel::-webkit-scrollbar,
+.sec-item-grid::-webkit-scrollbar,
+.sec-log-content::-webkit-scrollbar,
+.sec-detail-output::-webkit-scrollbar {
+  width: 5px;
+}
+
+.security-panel::-webkit-scrollbar-track,
+.sec-item-grid::-webkit-scrollbar-track,
+.sec-log-content::-webkit-scrollbar-track,
+.sec-detail-output::-webkit-scrollbar-track {
+  background: #111;
+}
+
+.security-panel::-webkit-scrollbar-thumb,
+.sec-item-grid::-webkit-scrollbar-thumb,
+.sec-log-content::-webkit-scrollbar-thumb,
+.sec-detail-output::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+.security-panel::-webkit-scrollbar-thumb:hover,
+.sec-item-grid::-webkit-scrollbar-thumb:hover,
+.sec-log-content::-webkit-scrollbar-thumb:hover,
+.sec-detail-output::-webkit-scrollbar-thumb:hover {
   background: #555;
 }

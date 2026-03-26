@@ -165,13 +165,15 @@ public class ClaudeApiService : IAiService
         request.Headers.Add("anthropic-version", ApiVersion);
         request.Headers.Add("x-api-key", _apiKey);
 
-        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+            .ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
             lock (_historyLock)
                 _conversationHistory.RemoveAt(_conversationHistory.Count - 1);
-            var errorJson = await response.Content.ReadAsStringAsync(ct);
+            var errorJson = await response.Content.ReadAsStringAsync(ct)
+                .ConfigureAwait(false);
             var errorDetail = TryExtractError(errorJson);
             throw new HttpRequestException($"Claude API error ({response.StatusCode}): {errorDetail}");
         }
@@ -181,12 +183,14 @@ public class ClaudeApiService : IAiService
         int inputTokens  = 0;
         int outputTokens = 0;
 
-        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var stream = await response.Content.ReadAsStreamAsync(ct)
+            .ConfigureAwait(false);
         using var reader = new StreamReader(stream);
 
         while (!reader.EndOfStream && !ct.IsCancellationRequested)
         {
-            var line = await reader.ReadLineAsync(ct);
+            var line = await reader.ReadLineAsync(ct)
+                .ConfigureAwait(false);
             if (string.IsNullOrEmpty(line)) continue;
             if (!line.StartsWith("data: ")) continue;
 

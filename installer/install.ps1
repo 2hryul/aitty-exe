@@ -1,5 +1,5 @@
 # =============================================================================
-#  Aitty SSH Terminal — Windows Installer v0.2.0
+#  Aitty SSH Terminal — Windows Installer v0.2.5
 #  사용법: 탐색기에서 우클릭 → "PowerShell로 실행"
 #         또는: powershell -ExecutionPolicy Bypass -File install.ps1
 #
@@ -10,7 +10,7 @@
 $ErrorActionPreference = "Stop"
 
 $AppName     = "Aitty SSH Terminal"
-$AppVersion  = "0.2.0"
+$AppVersion  = "0.2.5"
 $InstallDir  = Join-Path $env:LOCALAPPDATA "Aitty"
 $SourceDir   = $PSScriptRoot
 $ExeName     = "Aitty.exe"

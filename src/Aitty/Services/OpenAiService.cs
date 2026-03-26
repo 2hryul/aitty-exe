@@ -188,12 +188,14 @@ public class OpenAiService : IAiService
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+            .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             lock (_historyLock)
                 _history.RemoveAt(_history.Count - 1);
-            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            var errorBody = await response.Content.ReadAsStringAsync(ct)
+                .ConfigureAwait(false);
             throw new Exception(BuildApiError(response.StatusCode, errorBody));
         }
 
@@ -202,12 +204,14 @@ public class OpenAiService : IAiService
         int inputTokens  = 0;
         int outputTokens = 0;
 
-        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var stream = await response.Content.ReadAsStreamAsync(ct)
+            .ConfigureAwait(false);
         using var reader = new System.IO.StreamReader(stream);
 
         while (!reader.EndOfStream && !ct.IsCancellationRequested)
         {
-            var line = await reader.ReadLineAsync(ct);
+            var line = await reader.ReadLineAsync(ct)
+                .ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(line)) continue;
             if (!line.StartsWith("data: ")) continue;
 

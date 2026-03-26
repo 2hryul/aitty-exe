@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aitty.exe — AI-Powered SSH Terminal</title>
+<style>
+:root {
+  --cyan:    #0ea5e9;
+  --cyan-b:  #0284c7;
+  --purple:  #7c3aed;
+  --green:   #059669;
+  --red:     #dc2626;
+  --yellow:  #d97706;
+  --bg:      #ffffff;
+  --surf:    #f8fafc;
+  --surf2:   #f1f5f9;
+  --text:    #0f172a;
+  --muted:   #64748b;
+  --border:  rgba(15,23,42,0.09);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Segoe UI',system-ui,sans-serif;
+  background:var(--bg);color:var(--text);
+  overflow-x:hidden;
+}
+
+/* ─── Canvas ─── */
+#cvs{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.35;}
+
+/* ─── NAV ─── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:200;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 48px;
+  background:rgba(255,255,255,0.92);
+  backdrop-filter:blur(20px);
+  border-bottom:1px solid rgba(15,23,42,0.08);
+  box-shadow:0 1px 12px rgba(15,23,42,0.06);
+}
+.nav-logo{
+  font-size:1.3rem;font-weight:900;letter-spacing:3px;
+  background:linear-gradient(135deg,var(--cyan),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.nav-links{display:flex;gap:28px;}
+.nav-links a{
+  color:var(--muted);text-decoration:none;font-size:.85rem;
+  transition:color .2s;
+}
+.nav-links a:hover,.nav-links a.active{color:var(--cyan-b);}
+.nav-dl{
+  padding:8px 20px;border-radius:8px;font-size:.85rem;font-weight:700;
+  background:linear-gradient(135deg,var(--cyan-b),var(--purple));
+  color:#fff;cursor:pointer;border:none;
+}
+
+/* ─── HERO ─── */
+#hero{
+  position:relative;z-index:1;
+  min-height:100vh;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:100px 24px 80px;
+  background:radial-gradient(ellipse 80% 60% at 50% 0%,rgba(14,165,233,.06) 0%,transparent 70%),
+             radial-gradient(ellipse 50% 40% at 80% 50%,rgba(124,58,237,.04) 0%,transparent 60%);
+}
+.badge{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 18px;border-radius:999px;margin-bottom:32px;
+  background:rgba(14,165,233,.08);
+  border:1px solid rgba(14,165,233,.25);
+  font-size:.78rem;color:var(--cyan-b);letter-spacing:1px;
+}
+.badge-dot{width:7px;height:7px;border-radius:50%;background:var(--cyan-b);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.5)}}
+
+h1.hero-title{
+  font-size:clamp(3.5rem,9vw,7rem);
+  font-weight:900;line-height:.95;letter-spacing:-3px;
+  margin-bottom:28px;
+}
+.word{display:inline-block;overflow:hidden;}
+.word span{
+  display:inline-block;
+  background:linear-gradient(135deg,#0f172a 20%,var(--cyan-b) 60%,var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  animation:slideUp .8s cubic-bezier(.16,1,.3,1) both;
+}
+.word:nth-child(1) span{animation-delay:.1s}
+.word:nth-child(2) span{animation-delay:.25s}
+.word:nth-child(3) span{animation-delay:.4s}
+@keyframes slideUp{from{transform:translateY(110%);opacity:0}to{transform:translateY(0);opacity:1}}
+
+.hero-sub{
+  font-size:clamp(.95rem,2vw,1.2rem);color:var(--muted);
+  max-width:560px;line-height:1.7;margin-bottom:48px;
+  animation:fadeIn 1s .6s both;
+}
+@keyframes fadeIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+.hero-btns{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;animation:fadeIn 1s .8s both;}
+.btn-p{
+  padding:14px 32px;border-radius:12px;font-size:.95rem;font-weight:700;
+  background:linear-gradient(135deg,var(--cyan-b),var(--purple));
+  color:#fff;cursor:pointer;border:none;
+  box-shadow:0 4px 24px rgba(2,132,199,.3);
+  transition:transform .2s,box-shadow .2s;
+}
+.btn-p:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(2,132,199,.4);}
+.btn-o{
+  padding:14px 32px;border-radius:12px;font-size:.95rem;font-weight:700;
+  background:transparent;color:var(--text);cursor:pointer;
+  border:1.5px solid rgba(15,23,42,.18);transition:border-color .2s,color .2s;
+}
+.btn-o:hover{border-color:var(--cyan-b);color:var(--cyan-b);}
+
+.scroll-hint{
+  position:absolute;bottom:40px;left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  color:var(--muted);font-size:.75rem;animation:fadeIn 1s 1.2s both;
+}
+.scroll-arrow{width:22px;height:22px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);animation:bounce 1.6s infinite;}
+@keyframes bounce{0%,100%{transform:rotate(45deg) translateY(0)}50%{transform:rotate(45deg) translateY(6px)}}
+
+/* ─── STATS ─── */
+.stats-strip{
+  position:relative;z-index:1;
+  display:flex;justify-content:center;
+  padding:0 24px 80px;
+}
+.stats-inner{
+  display:grid;grid-template-columns:repeat(4,1fr);
+  width:100%;max-width:860px;
+  border:1px solid var(--border);border-radius:16px;overflow:hidden;
+  box-shadow:0 4px 24px rgba(15,23,42,.07);
+}
+.stat{padding:28px 20px;text-align:center;background:#fff;transition:background .3s;}
+.stat:hover{background:var(--surf);}
+.stat+.stat{border-left:1px solid var(--border);}
+.stat-n{
+  font-size:2.2rem;font-weight:900;
+  background:linear-gradient(135deg,var(--cyan-b),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.stat-l{font-size:.8rem;color:var(--muted);margin-top:4px;}
+
+/* ─── NARRATIVE ─── */
+.narrative{
+  position:relative;z-index:1;
+  max-width:1120px;margin:0 auto;padding:0 24px 40px;
+}
+.narrative-header{text-align:center;padding:80px 0 60px;}
+.narrative-header h2{font-size:clamp(2rem,4.5vw,3.2rem);font-weight:900;margin-bottom:12px;}
+.narrative-header p{color:var(--muted);font-size:1.05rem;}
+
+.chapter{
+  display:grid;grid-template-columns:1fr 1fr;
+  min-height:100vh;align-items:center;
+  padding:80px 0;gap:80px;
+}
+.chapter:nth-child(even){direction:rtl;}
+.chapter:nth-child(even)>*{direction:ltr;}
+
+.ch-text{
+  position:sticky;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;gap:20px;
+}
+.ch-num{font-size:.75rem;font-weight:700;letter-spacing:3px;color:var(--cyan-b);text-transform:uppercase;}
+.ch-title{font-size:clamp(1.8rem,3.5vw,2.6rem);font-weight:900;line-height:1.1;}
+.ch-desc{font-size:.95rem;color:var(--muted);line-height:1.8;max-width:400px;}
+.ch-points{list-style:none;display:flex;flex-direction:column;gap:10px;margin-top:4px;}
+.ch-points li{display:flex;align-items:flex-start;gap:10px;font-size:.88rem;color:var(--muted);}
+.ch-points li strong{color:var(--text);}
+.cp-ic{flex-shrink:0;width:20px;text-align:center;}
+
+.ch-screen{
+  background:#1e2433;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:20px;overflow:hidden;
+  box-shadow:0 20px 60px rgba(15,23,42,.18),0 4px 16px rgba(15,23,42,.1);
+  transition:transform .4s,box-shadow .4s;
+}
+.ch-screen:hover{
+  transform:translateY(-8px) scale(1.01);
+  box-shadow:0 32px 80px rgba(15,23,42,.22),0 0 32px rgba(14,165,233,.1);
+}
+
+/* window chrome */
+.win-bar{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 16px;background:#111827;
+  border-bottom:1px solid rgba(255,255,255,.05);
+}
+.wd{width:11px;height:11px;border-radius:50%;}
+.wd-r{background:#ff5f57}.wd-y{background:#ffbd2e}.wd-g{background:#28ca42}
+.win-title{color:var(--muted);font-size:.75rem;margin:0 auto;}
+
+/* SSH screen */
+.ssh-screen{font-family:'Consolas','Courier New',monospace;font-size:.78rem;}
+.ssh-form{padding:14px 16px;display:flex;flex-direction:column;gap:5px;background:#070d1a;}
+.sf-row{display:flex;align-items:center;gap:8px;}
+.sf-l{color:var(--muted);width:55px;font-size:.72rem;}
+.sf-v{flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:5px;padding:4px 8px;color:#94a3b8;font-size:.73rem;}
+.sf-btns{display:flex;gap:8px;margin-top:6px;}
+.sf-btn{padding:5px 14px;border-radius:6px;font-size:.73rem;cursor:default;border:1px solid;}
+.sf-btn-g{background:rgba(16,185,129,.15);color:#4ade80;border-color:rgba(16,185,129,.3);}
+.sf-btn-r{background:rgba(239,68,68,.1);color:var(--red);border-color:rgba(239,68,68,.3);}
+.sf-btn-m{background:rgba(255,255,255,.05);color:var(--muted);border-color:var(--border);}
+.ssh-term{padding:14px 16px;min-height:200px;background:#030712;}
+.tl{line-height:1.8;font-size:.75rem;}
+.tg{color:#4ade80}.tc{color:var(--cyan)}.tm{color:var(--muted)}.ty{color:var(--yellow)}.tr{color:var(--red)}
+.blink{animation:blink .8s step-end infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.ssh-statusbar{padding:6px 16px;background:#0d1117;border-top:1px solid rgba(255,255,255,.05);display:flex;gap:12px;font-size:.68rem;}
+.sb-on{color:#4ade80}.sb-off{color:var(--muted)}
+
+/* Chat screen */
+.chat-tabs{display:flex;background:#0a1020;border-bottom:1px solid rgba(255,255,255,.05);}
+.ct{padding:9px 16px;font-size:.75rem;color:var(--muted);cursor:default;}
+.ct-a{color:var(--cyan);border-bottom:2px solid var(--cyan);}
+.chat-body{padding:16px;display:flex;flex-direction:column;gap:10px;background:#070d1a;min-height:280px;}
+.bubble{padding:9px 13px;border-radius:12px;font-size:.8rem;line-height:1.6;max-width:88%;font-family:'Segoe UI',sans-serif;}
+.b-user{background:rgba(0,245,255,.09);color:var(--text);align-self:flex-end;margin-left:auto;border-bottom-right-radius:3px;}
+.b-ai{background:rgba(255,255,255,.04);color:#94a3b8;border-bottom-left-radius:3px;}
+.b-name{color:var(--cyan);font-size:.7rem;font-weight:700;margin-bottom:4px;}
+.code-snippet{margin-top:8px;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.09);}
+.cs-head{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:#111827;font-size:.68rem;color:var(--muted);font-family:monospace;}
+.cs-run{background:rgba(16,185,129,.2);color:#4ade80;border:none;padding:2px 9px;border-radius:4px;font-size:.68rem;cursor:default;}
+.cs-body{padding:8px 10px;background:#030712;font-family:monospace;font-size:.73rem;color:#94a3b8;}
+.thinking{display:flex;align-items:center;gap:6px;padding:4px 0;}
+.td{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:th 1.2s infinite;}
+.td:nth-child(2){animation-delay:.2s}.td:nth-child(3){animation-delay:.4s}
+@keyframes th{0%,100%{opacity:.2;transform:scale(.7)}50%{opacity:1;transform:scale(1)}}
+.chat-input-row{display:flex;gap:8px;padding:12px 16px;background:#070d1a;border-top:1px solid rgba(255,255,255,.05);}
+.ci{flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:8px;padding:7px 12px;color:var(--muted);font-size:.78rem;outline:none;font-family:'Segoe UI',sans-serif;}
+.cs-btn{background:var(--cyan);color:#000;border:none;border-radius:8px;padding:7px 14px;font-weight:700;cursor:default;}
+
+/* CLI screen */
+.cli-screen{font-family:'Consolas','Courier New',monospace;font-size:.78rem;}
+.cli-body{padding:16px;background:#030712;min-height:300px;}
+.cli-cmd{display:flex;gap:0;margin-bottom:2px;}
+.cli-prompt{color:var(--cyan);}
+.cli-sep{color:var(--muted);}
+.cli-in{color:var(--text);}
+.cli-out{color:var(--muted);padding-left:4px;line-height:1.6;}
+.cli-hi{color:#4ade80;}
+
+/* Security screen */
+.sec-screen{font-family:'Segoe UI',sans-serif;}
+.sec-summary{display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid var(--border);}
+.sec-sum-item{padding:14px 18px;text-align:center;background:#070d1a;}
+.sec-sum-item+.sec-sum-item{border-left:1px solid var(--border);}
+.ssi-n{font-size:1.6rem;font-weight:900;}
+.ssi-n-r{color:var(--red)}.ssi-n-g{color:#4ade80}
+.ssi-l{font-size:.72rem;color:var(--muted);margin-top:2px;}
+.sec-list{padding:12px 16px;background:#070d1a;display:flex;flex-direction:column;gap:6px;}
+.sec-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.03);font-size:.78rem;}
+.sec-badge{padding:2px 8px;border-radius:4px;font-size:.68rem;font-weight:700;flex-shrink:0;min-width:44px;text-align:center;}
+.sb-r{background:rgba(239,68,68,.18);color:var(--red);}
+.sb-g{background:rgba(16,185,129,.18);color:#4ade80;}
+.sb-y{background:rgba(245,158,11,.18);color:var(--yellow);}
+.sec-id{color:var(--text);}
+.sec-detail{color:var(--muted);font-size:.7rem;margin-left:auto;}
+.sec-progress{padding:12px 16px;background:#070d1a;border-top:1px solid var(--border);}
+.sp-label{font-size:.72rem;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between;}
+.sp-bar{height:4px;background:rgba(255,255,255,.07);border-radius:2px;}
+.sp-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--cyan),var(--purple));width:66%;}
+.sec-btns{display:flex;gap:8px;padding:12px 16px;background:#070d1a;border-top:1px solid var(--border);}
+.sec-btn{padding:6px 14px;border-radius:6px;font-size:.75rem;cursor:default;border:1px solid;}
+.sb-cyan{border-color:rgba(0,245,255,.3);color:var(--cyan);background:rgba(0,245,255,.06);}
+.sb-sm{border-color:var(--border);color:var(--muted);background:transparent;}
+
+/* Settings screen */
+.set-screen{font-family:'Segoe UI',sans-serif;font-size:.8rem;}
+.set-body{padding:18px;background:#070d1a;}
+.set-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+.set-row:last-child{border-bottom:none;}
+.set-k{color:var(--muted);font-size:.75rem;width:80px;flex-shrink:0;}
+.set-v-sel{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:4px 10px;font-size:.75rem;color:var(--text);cursor:default;}
+.set-v-inp{color:#94a3b8;font-family:monospace;font-size:.73rem;}
+.set-v-ok{color:#4ade80;font-size:.73rem;}
+.set-prompt-label{color:var(--muted);font-size:.72rem;margin:10px 0 6px;}
+.set-prompt-box{background:#030712;border-radius:8px;padding:10px;font-size:.72rem;color:#64748b;line-height:1.6;font-family:'Consolas',monospace;border:1px solid rgba(255,255,255,.06);}
+.set-provider-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:0 0 12px;}
+.set-pv{padding:4px 10px;border-radius:6px;font-size:.72rem;cursor:default;border:1px solid var(--border);color:var(--muted);}
+.set-pv-a{border-color:rgba(0,245,255,.3);color:var(--cyan);background:rgba(0,245,255,.06);}
+.set-btns{display:flex;gap:8px;margin-top:12px;}
+
+/* ─── FEATURES ─── */
+#features{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:80px 24px;}
+.sec-hd{text-align:center;margin-bottom:56px;}
+.sec-hd h2{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;margin-bottom:10px;}
+.sec-hd p{color:var(--muted);font-size:1rem;}
+.bento{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.bento-card{padding:28px;background:#fff;border:1px solid var(--border);border-radius:18px;transition:transform .3s,border-color .3s,box-shadow .3s;cursor:default;box-shadow:0 2px 8px rgba(15,23,42,.05);}
+.bento-card:hover{transform:translateY(-5px);border-color:rgba(14,165,233,.3);box-shadow:0 16px 40px rgba(15,23,42,.1),0 0 24px rgba(14,165,233,.08);}
+.bento-card.wide{grid-column:span 2;}
+.bc-icon{font-size:1.8rem;margin-bottom:16px;width:52px;height:52px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:rgba(14,165,233,.08);}
+.bento-card h3{font-size:1rem;font-weight:700;margin-bottom:8px;}
+.bento-card p{font-size:.85rem;color:var(--muted);line-height:1.65;}
+.bc-tag{display:inline-block;margin-top:14px;padding:3px 10px;border-radius:999px;font-size:.7rem;font-weight:600;background:rgba(14,165,233,.08);color:var(--cyan-b);border:1px solid rgba(14,165,233,.2);}
+
+/* ─── SECURITY ─── */
+#security{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:80px 24px;}
+.danger-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:48px;}
+.dg-card{padding:24px;border-radius:16px;border:1px solid rgba(15,23,42,.08);transition:transform .2s;}
+.dg-card:hover{transform:scale(1.02);}
+.dg-d{background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.25);}
+.dg-c{background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.25);}
+.dg-w{background:rgba(234,179,8,.06);border-color:rgba(234,179,8,.25);}
+.dg-lvl{font-size:1.1rem;font-weight:800;margin-bottom:6px;}
+.dg-d .dg-lvl{color:var(--red)}.dg-c .dg-lvl{color:var(--yellow)}.dg-w .dg-lvl{color:#eab308}
+.dg-desc{font-size:.82rem;color:var(--muted);margin-bottom:12px;}
+.dg-tags{display:flex;flex-wrap:wrap;gap:5px;}
+.dg-tag{font-family:monospace;font-size:.72rem;padding:2px 7px;border-radius:4px;background:rgba(15,23,42,.05);color:#475569;border:1px solid rgba(15,23,42,.07);}
+
+/* ─── AI MODELS ─── */
+#ai-models{position:relative;z-index:1;max-width:900px;margin:0 auto;padding:80px 24px;text-align:center;}
+.models-row{display:flex;justify-content:center;flex-wrap:wrap;gap:14px;margin-top:48px;}
+.model-card{display:flex;flex-direction:column;align-items:center;gap:8px;padding:22px 28px;background:var(--surf);border:1px solid var(--border);border-radius:14px;transition:transform .25s,border-color .25s,box-shadow .25s;min-width:130px;}
+.model-card:hover{transform:translateY(-4px);border-color:var(--purple);box-shadow:0 0 20px rgba(139,92,246,.2);}
+.mi{font-size:2rem;}.mn{font-size:.88rem;font-weight:700;}.ms{font-size:.72rem;color:var(--muted);}
+
+/* ─── ARCH ─── */
+#architecture{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:80px 24px;}
+.arch-wrap{display:grid;grid-template-columns:1fr 60px 1fr;gap:16px;align-items:center;margin-top:48px;}
+.arch-box{padding:22px;border-radius:14px;border:1px solid var(--border);background:var(--surf);}
+.arch-box h4{font-size:.75rem;text-transform:uppercase;letter-spacing:2px;color:var(--cyan-b);margin-bottom:14px;}
+.ai-item{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:.84rem;color:var(--muted);border-bottom:1px solid rgba(15,23,42,.06);}
+.ai-item:last-child{border-bottom:none;}
+.ai-dot{width:6px;height:6px;border-radius:50%;background:var(--cyan-b);flex-shrink:0;}
+.ai-dot-p{background:var(--purple);}
+.arch-mid{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--muted);font-size:.65rem;text-align:center;}
+.arch-line{width:2px;height:48px;background:linear-gradient(to bottom,var(--cyan-b),var(--purple));border-radius:1px;}
+
+/* ─── CTA ─── */
+#cta{position:relative;z-index:1;padding:120px 24px;text-align:center;}
+.cta-glow{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,rgba(14,165,233,.07) 0%,transparent 70%);}
+#cta h2{font-size:clamp(2rem,5vw,3.5rem);font-weight:900;margin-bottom:14px;}
+#cta p{color:var(--muted);font-size:1.05rem;margin-bottom:40px;}
+
+/* ─── FOOTER ─── */
+footer{position:relative;z-index:1;padding:28px 48px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:.82rem;}
+.fl{font-weight:900;letter-spacing:3px;background:linear-gradient(135deg,var(--cyan-b),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+
+/* ─── REVEAL ─── */
+.rv{opacity:0;transform:translateY(32px);transition:opacity .7s,transform .7s;}
+.rv.on{opacity:1;transform:translateY(0);}
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:900px){
+  nav{padding:12px 20px;}
+  .nav-links{display:none;}
+  .chapter{grid-template-columns:1fr;min-height:auto;gap:32px;padding:48px 0;}
+  .chapter:nth-child(even){direction:ltr;}
+  .ch-text{position:static;transform:none;}
+  .stats-inner{grid-template-columns:repeat(2,1fr);}
+  .bento{grid-template-columns:1fr;}
+  .bento-card.wide{grid-column:span 1;}
+  .danger-grid{grid-template-columns:1fr;}
+  .arch-wrap{grid-template-columns:1fr;}
+  .arch-mid{flex-direction:row;}
+  .arch-line{width:40px;height:2px;}
+  footer{flex-direction:column;gap:8px;text-align:center;}
+}
+</style>
+</head>
+<body>
+
+<canvas id="cvs"></canvas>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">AITTY</div>
+  <div class="nav-links">
+    <a href="#story">화면 구성</a>
+    <a href="#features">기능</a>
+    <a href="#security">보안</a>
+    <a href="#ai-models">AI 모델</a>
+    <a href="#architecture">아키텍처</a>
+  </div>
+  <button class="nav-dl">다운로드</button>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="badge"><span class="badge-dot"></span>WPF .NET 8 + React 19 + SSH.NET</div>
+  <h1 class="hero-title">
+    <span class="word"><span>AI와</span></span>&nbsp;
+    <span class="word"><span>함께하는</span></span><br>
+    <span class="word"><span>SSH 터미널</span></span>
+  </h1>
+  <p class="hero-sub">서버에 접속하고, AI에게 묻고, 위험한 명령은 자동으로 차단됩니다.<br>Claude · OpenAI · Gemini · Ollama, 원하는 모델을 선택하세요.</p>
+  <div class="hero-btns">
+    <button class="btn-p" onclick="document.getElementById('story').scrollIntoView({behavior:'smooth'})">화면 둘러보기 →</button>
+    <button class="btn-o">GitHub</button>
+  </div>
+  <div class="scroll-hint"><span>스크롤</span><div class="scroll-arrow"></div></div>
+</section>
+
+<!-- STATS -->
+<div class="stats-strip">
+  <div class="stats-inner">
+    <div class="stat rv"><div class="stat-n" data-t="4">0</div><div class="stat-l">지원 AI 모델</div></div>
+    <div class="stat rv"><div class="stat-n" data-t="3">0</div><div class="stat-l">위험도 레벨</div></div>
+    <div class="stat rv"><div class="stat-n" data-t="834">0</div><div class="stat-l">상태머신 LoC</div></div>
+    <div class="stat rv"><div class="stat-n" data-t="80" data-s="ms">0ms</div><div class="stat-l">스트리밍 Throttle</div></div>
+  </div>
+</div>
+
+<!-- SCROLL NARRATIVE -->
+<section class="narrative" id="story">
+  <div class="narrative-header rv">
+    <h2>화면으로 보는 Aitty</h2>
+    <p>스크롤하며 각 화면이 어떻게 동작하는지 확인하세요</p>
+  </div>
+
+  <!-- ① SSH Terminal -->
+  <div class="chapter rv">
+    <div class="ch-text">
+      <div class="ch-num">Chapter 01 — SSHTerminal.tsx</div>
+      <h2 class="ch-title">서버에<br>접속하세요</h2>
+      <p class="ch-desc">xterm.js 기반의 풀 기능 SSH 터미널. 비밀번호 인증과 Private Key 인증을 모두 지원하며, 연결 정보는 세션 중에만 유지됩니다.</p>
+      <ul class="ch-points">
+        <li><span class="cp-ic">🔑</span><span>Password / <strong>Private Key</strong> 인증 선택</span></li>
+        <li><span class="cp-ic">🎨</span><span><strong>ANSI 컬러</strong> 렌더링 · 5,000줄 버퍼</span></li>
+        <li><span class="cp-ic">📋</span><span>클립보드 붙여넣기 <strong>Ctrl+Shift+V</strong></span></li>
+        <li><span class="cp-ic">⚡</span><span>Connect / Disconnect / <strong>Clear</strong></span></li>
+      </ul>
+    </div>
+    <div class="ch-screen">
+      <div class="win-bar">
+        <span class="wd wd-r"></span><span class="wd wd-y"></span><span class="wd wd-g"></span>
+        <span class="win-title">🖥 SSH Terminal</span>
+      </div>
+      <div class="ssh-screen">
+        <div class="ssh-form">
+          <div class="sf-row"><span class="sf-l">Host</span><span class="sf-v">172.16.1.103</span></div>
+          <div class="sf-row"><span class="sf-l">Port</span><span class="sf-v">22</span></div>
+          <div class="sf-row"><span class="sf-l">Username</span><span class="sf-v">ds</span></div>
+          <div class="sf-row"><span class="sf-l">Private Key</span><span class="sf-v">~/.ssh/id_rsa</span></div>
+          <div class="sf-btns">
+            <span class="sf-btn sf-btn-g">Connect</span>
+            <span class="sf-btn sf-btn-r">Disconnect</span>
+            <span class="sf-btn sf-btn-m">Clear</span>
+          </div>
+        </div>
+        <div class="ssh-term">
+          <div class="tl"><span class="tg">✓</span> Connected to 172.16.1.103:22 as ds</div>
+          <div class="tl"><span class="tg">ds@ubuntu:~$</span> systemctl status nginx</div>
+          <div class="tl tm">● nginx.service - A high performance web server</div>
+          <div class="tl tg">&nbsp;&nbsp;Active: <span class="tg">active (running)</span> since Mon 2026-03-24</div>
+          <div class="tl"><span class="tg">ds@ubuntu:~$</span> df -h</div>
+          <div class="tl tm">Filesystem&nbsp;&nbsp;Size&nbsp;Used&nbsp;Avail&nbsp;Use%</div>
+          <div class="tl ty">/dev/sda1&nbsp;&nbsp;&nbsp;50G&nbsp;&nbsp;38G&nbsp;&nbsp;12G&nbsp;&nbsp;76%</div>
+          <div class="tl"><span class="tg">ds@ubuntu:~$</span> <span class="blink">█</span></div>
+        </div>
+        <div class="ssh-statusbar">
+          <span class="sb-on">● Connected</span>
+          <span class="sb-off">172.16.1.103:22</span>
+          <span class="sb-off">ds@ubuntu</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ② Chat Panel -->
+  <div class="chapter rv">
+    <div class="ch-text">
+      <div class="ch-num">Chapter 02 — ChatPanel.tsx</div>
+      <h2 class="ch-title">AI에게<br>물어보세요</h2>
+      <p class="ch-desc">서버 상황을 자연어로 질문하면 AI가 분석하고 명령어를 제안합니다. 제안된 코드는 위험도 검사 후 ▶ Run 버튼으로 SSH에 직접 실행됩니다.</p>
+      <ul class="ch-points">
+        <li><span class="cp-ic">⚡</span><span>실시간 <strong>스트리밍</strong> 응답 (80ms throttle)</span></li>
+        <li><span class="cp-ic">🤔</span><span><strong>ThinkingIndicator</strong> — 응답 생성 중 표시</span></li>
+        <li><span class="cp-ic">▶</span><span>CodeBlock → <strong>위험도 검사 → Run</strong> 원클릭</span></li>
+        <li><span class="cp-ic">💾</span><span>대화 히스토리 <strong>저장 / 복원</strong></span></li>
+        <li><span class="cp-ic">⛔</span><span>Ctrl+C / Cancel로 <strong>스트리밍 중단</strong></span></li>
+      </ul>
+    </div>
+    <div class="ch-screen">
+      <div class="win-bar">
+        <span class="wd wd-r"></span><span class="wd wd-y"></span><span class="wd wd-g"></span>
+        <span class="win-title">💬 Chat · 💻 CLI · 🛡 보안점검</span>
+      </div>
+      <div class="chat-tabs">
+        <span class="ct ct-a">💬 Chat</span>
+        <span class="ct">💻 CLI</span>
+        <span class="ct">🛡 보안점검</span>
+      </div>
+      <div class="chat-body">
+        <div class="bubble b-user">디스크 사용률이 76%인데 안전하게 정리하는 방법 알려줘</div>
+        <div class="bubble b-ai">
+          <div class="b-name">🤖 Claude claude-3-5-sonnet</div>
+          디스크 사용률이 높군요. 다음 명령어로 안전하게 정리할 수 있습니다:
+          <div class="code-snippet">
+            <div class="cs-head"><span>bash</span><button class="cs-run">▶ Run</button></div>
+            <div class="cs-body">apt-get clean && journalctl --vacuum-size=100M</div>
+          </div>
+        </div>
+        <div class="bubble b-user">rm -rf /tmp/* 해도 될까?</div>
+        <div class="bubble b-ai">
+          <div class="b-name">🤖 Claude</div>
+          <span style="color:var(--red)">🔴 DANGER 명령어가 포함되어 있습니다.</span>
+          <div class="code-snippet">
+            <div class="cs-head"><span>bash</span><button class="cs-run" style="opacity:.4;cursor:not-allowed">🚫 차단됨</button></div>
+            <div class="cs-body" style="color:var(--red);opacity:.7">rm -rf /tmp/*</div>
+          </div>
+          대신 <span style="color:#4ade80">find /tmp -maxdepth 1 -mtime +7 -delete</span> 를 권장합니다.
+        </div>
+        <div class="thinking"><span class="td"></span><span class="td"></span><span class="td"></span><span style="font-size:.72rem;color:var(--muted);margin-left:6px">thinking...</span></div>
+      </div>
+      <div class="chat-input-row">
+        <input class="ci" placeholder="메시지를 입력하세요 (Ctrl+C로 중단)..." readonly>
+        <button class="cs-btn">↑</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ CLI Terminal -->
+  <div class="chapter rv">
+    <div class="ch-text">
+      <div class="ch-num">Chapter 03 — AITerminal.tsx</div>
+      <h2 class="ch-title">CLI로<br>AI를 제어</h2>
+      <p class="ch-desc">채팅 UI 대신 터미널 스타일로 AI를 사용합니다. <code style="background:rgba(0,245,255,.1);color:var(--cyan);padding:1px 5px;border-radius:3px;font-family:monospace">local@aitty:~$</code> 프롬프트에서 내장 명령어로 모델 전환, 분석, 히스토리 관리를 바로 할 수 있습니다.</p>
+      <ul class="ch-points">
+        <li><span class="cp-ic">📋</span><span><strong>model list</strong> — 사용 가능한 모델 목록</span></li>
+        <li><span class="cp-ic">🔄</span><span><strong>model use llama3.1:8b</strong> — 모델 전환</span></li>
+        <li><span class="cp-ic">🔍</span><span><strong>analyze last</strong> — SSH 마지막 출력 AI 분석</span></li>
+        <li><span class="cp-ic">⚙️</span><span><strong>system set</strong> — 시스템 프롬프트 변경</span></li>
+        <li><span class="cp-ic">🗑</span><span><strong>reset</strong> — 대화 히스토리 초기화</span></li>
+      </ul>
+    </div>
+    <div class="ch-screen">
+      <div class="win-bar">
+        <span class="wd wd-r"></span><span class="wd wd-y"></span><span class="wd wd-g"></span>
+        <span class="win-title">💻 AI CLI Terminal</span>
+      </div>
+      <div class="cli-screen">
+        <div class="cli-body">
+          <div class="cli-cmd"><span class="cli-prompt">local@aitty</span><span class="cli-sep">:~$&nbsp;</span><span class="cli-in">model list</span></div>
+          <div class="cli-out">Available Models:</div>
+          <div class="cli-out">&nbsp;&nbsp;<span class="cli-hi">qwen2.5-coder:7b</span> <span style="color:var(--cyan)">&lt;current&gt;</span></div>
+          <div class="cli-out">&nbsp;&nbsp;llama3.1:8b</div>
+          <div class="cli-out">&nbsp;&nbsp;gemma2:9b</div>
+          <br>
+          <div class="cli-cmd"><span class="cli-prompt">local@aitty</span><span class="cli-sep">:~$&nbsp;</span><span class="cli-in">analyze last</span></div>
+          <div class="cli-out">SSH 출력 분석 중...</div>
+          <br>
+          <div class="cli-out" style="color:#4ade80">💡 분석 결과:</div>
+          <div class="cli-out">디스크 사용률 76%. 권장 명령어:</div>
+          <div class="cli-out">&nbsp;&nbsp;<span style="color:var(--yellow)">apt-get clean</span></div>
+          <div class="cli-out">&nbsp;&nbsp;<span style="color:var(--yellow)">journalctl --vacuum-size=100M</span></div>
+          <br>
+          <div class="cli-cmd"><span class="cli-prompt">local@aitty</span><span class="cli-sep">:~$&nbsp;</span><span class="cli-in">model use llama3.1:8b</span></div>
+          <div class="cli-out" style="color:#4ade80">✓ Model switched: llama3.1:8b</div>
+          <br>
+          <div class="cli-cmd"><span class="cli-prompt">local@aitty</span><span class="cli-sep">:~$&nbsp;</span><span class="blink" style="color:var(--cyan)">█</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ④ Security Panel -->
+  <div class="chapter rv">
+    <div class="ch-text">
+      <div class="ch-num">Chapter 04 — SecurityPanel.tsx</div>
+      <h2 class="ch-title">보안을<br>점검하세요</h2>
+      <p class="ch-desc">서버에 SCP로 점검 스크립트를 자동 업로드하고 실행합니다. 주요DS AX 기준 취약점 항목(U-xx)을 자동 판정하며, AI가 조치 방안을 제안합니다.</p>
+      <ul class="ch-points">
+        <li><span class="cp-ic">📤</span><span>SCP로 점검 스크립트 <strong>자동 업로드</strong></span></li>
+        <li><span class="cp-ic">🔍</span><span><strong>U-xx 항목별</strong> 자동 점검 실행</span></li>
+        <li><span class="cp-ic">🤖</span><span>AI가 결과 분석 · <strong>조치 방안 제안</strong></span></li>
+        <li><span class="cp-ic">📄</span><span>점검 결과 <strong>저장 · 리포트</strong> 생성</span></li>
+        <li><span class="cp-ic">🔗</span><span>SSH <strong>연결 상태에서만</strong> 활성화</span></li>
+      </ul>
+    </div>
+    <div class="ch-screen">
+      <div class="win-bar">
+        <span class="wd wd-r"></span><span class="wd wd-y"></span><span class="wd wd-g"></span>
+        <span class="win-title">🛡 보안점검 (Security Audit)</span>
+      </div>
+      <div class="sec-screen">
+        <div class="sec-summary">
+          <div class="sec-sum-item"><div class="ssi-n ssi-n-r">3</div><div class="ssi-l">취약 항목</div></div>
+          <div class="sec-sum-item"><div class="ssi-n ssi-n-g">5</div><div class="ssi-l">양호 항목</div></div>
+        </div>
+        <div class="sec-list">
+          <div class="sec-row"><span class="sec-badge sb-r">취약</span><span class="sec-id">U-02 패스워드 복잡성 설정</span><span class="sec-detail">조치 필요</span></div>
+          <div class="sec-row"><span class="sec-badge sb-g">양호</span><span class="sec-id">U-04 패스워드 최소 길이</span><span class="sec-detail">준수</span></div>
+          <div class="sec-row"><span class="sec-badge sb-r">취약</span><span class="sec-id">U-07 관리자 원격 접속</span><span class="sec-detail">root 허용됨</span></div>
+          <div class="sec-row"><span class="sec-badge sb-g">양호</span><span class="sec-id">U-08 SSH 프로토콜 버전</span><span class="sec-detail">SSHv2</span></div>
+          <div class="sec-row"><span class="sec-badge sb-y">점검중</span><span class="sec-id">U-13 접근 제어 설정</span><span class="sec-detail">분석 중...</span></div>
+        </div>
+        <div class="sec-progress">
+          <div class="sp-label"><span>점검 진행률</span><span>8 / 12</span></div>
+          <div class="sp-bar"><div class="sp-fill"></div></div>
+        </div>
+        <div class="sec-btns">
+          <button class="sec-btn sb-cyan">▶ 재점검</button>
+          <button class="sec-btn sb-sm">결과 저장</button>
+          <button class="sec-btn sb-sm">AI 분석</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑤ AI Settings -->
+  <div class="chapter rv">
+    <div class="ch-text">
+      <div class="ch-num">Chapter 05 — AISettingsPanel.tsx</div>
+      <h2 class="ch-title">어떤 AI든<br>연결하세요</h2>
+      <p class="ch-desc">Ollama(로컬), Google Gemini, Anthropic Claude, OpenAI 중 원하는 프로바이더를 선택하고 API 키와 모델을 설정합니다. Windows DPAPI로 암호화되어 저장됩니다.</p>
+      <ul class="ch-points">
+        <li><span class="cp-ic">🦙</span><span><strong>Ollama</strong> — 로컬 서버 Endpoint + 모델</span></li>
+        <li><span class="cp-ic">✨</span><span><strong>Gemini</strong> — API Key + gemini-2.0-flash</span></li>
+        <li><span class="cp-ic">🧠</span><span><strong>Claude</strong> — API Key + claude-3-5-sonnet</span></li>
+        <li><span class="cp-ic">⚡</span><span><strong>OpenAI</strong> — API Key + GPT-4o</span></li>
+        <li><span class="cp-ic">🔒</span><span>DPAPI <strong>암호화 저장</strong> (Windows 전용)</span></li>
+      </ul>
+    </div>
+    <div class="ch-screen">
+      <div class="win-bar">
+        <span class="wd wd-r"></span><span class="wd wd-y"></span><span class="wd wd-g"></span>
+        <span class="win-title">⚙️ AI Provider 설정</span>
+      </div>
+      <div class="set-screen">
+        <div class="set-body">
+          <div class="set-provider-tabs">
+            <span class="set-pv set-pv-a">🦙 Ollama</span>
+            <span class="set-pv">✨ Gemini</span>
+            <span class="set-pv">🧠 Claude</span>
+            <span class="set-pv">⚡ OpenAI</span>
+          </div>
+          <div class="set-row"><span class="set-k">Endpoint</span><span class="set-v-inp">http://172.16.1.103:11434</span></div>
+          <div class="set-row"><span class="set-k">Status</span><span class="set-v-ok">✓ Ready on http://172.16.1.103:11434</span></div>
+          <div class="set-row"><span class="set-k">Model</span><span class="set-v-sel">qwen2.5-coder:7b ▾</span></div>
+          <div class="set-prompt-label">System Prompt</div>
+          <div class="set-prompt-box">You are a local Linux SSH assistant. Analyze terminal output, explain issues, and suggest safe next commands. Prefer minimal-risk commands first.</div>
+          <div class="set-btns">
+            <button class="sec-btn sb-cyan">Check</button>
+            <button class="sec-btn" style="border-color:rgba(16,185,129,.3);color:#4ade80;background:rgba(16,185,129,.06)">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section><!-- /narrative -->
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="sec-hd rv"><h2>핵심 기능</h2><p>하나의 창에서 모든 것을</p></div>
+  <div class="bento">
+    <div class="bento-card wide rv">
+      <div class="bc-icon">⚡</div>
+      <h3>실시간 AI 스트리밍</h3>
+      <p>WPF Dispatcher와 WebView2 IPC를 통한 청크 단위 스트리밍. 80ms throttle로 UI 프리징 없이 응답이 실시간으로 렌더링됩니다. FIFO 큐로 순서를 보장합니다.</p>
+      <span class="bc-tag">IpcBridge + WPF Dispatcher</span>
+    </div>
+    <div class="bento-card rv">
+      <div class="bc-icon">🔒</div>
+      <h3>DPAPI 보안 저장소</h3>
+      <p>Windows DPAPI로 암호화된 API 키 관리. 앱 재시작 후에도 자격증명이 안전하게 유지됩니다.</p>
+      <span class="bc-tag">DPAPI 암호화</span>
+    </div>
+    <div class="bento-card rv">
+      <div class="bc-icon">🖥️</div>
+      <h3>듀얼 패널 레이아웃</h3>
+      <p>좌측 xterm.js SSH 터미널과 우측 LLM 터미널을 드래그 스플리터로 자유롭게 조절합니다.</p>
+      <span class="bc-tag">App.tsx 2패널</span>
+    </div>
+    <div class="bento-card rv">
+      <div class="bc-icon">🛡️</div>
+      <h3>위험 명령어 자동 차단</h3>
+      <p>LLM 생성 명령어를 실행 전 3단계(DANGER/CAUTION/WARNING) 자동 검증합니다.</p>
+      <span class="bc-tag">commandSafety.ts</span>
+    </div>
+    <div class="bento-card rv">
+      <div class="bc-icon">🌐</div>
+      <h3>멀티 AI 프로바이더</h3>
+      <p>Claude, OpenAI, Gemini, Ollama(로컬)를 설정 한 번으로 전환합니다.</p>
+      <span class="bc-tag">AI Service Manager</span>
+    </div>
+    <div class="bento-card rv">
+      <div class="bc-icon">🔧</div>
+      <h3>SSH 통합 관리</h3>
+      <p>SSH.NET 기반 안정적인 접속. SCP 파일 전송과 보안점검 스크립트 자동 업로드 지원.</p>
+      <span class="bc-tag">SSH.NET</span>
+    </div>
+  </div>
+</section>
+
+<!-- SECURITY -->
+<section id="security">
+  <div class="sec-hd rv"><h2>3단계 명령어 보안 필터</h2><p>AI가 생성한 모든 쉘 명령어는 실행 전 자동 분석됩니다</p></div>
+  <div class="danger-grid">
+    <div class="dg-card dg-d rv">
+      <div class="dg-lvl">🔴 DANGER — 즉시 차단</div>
+      <div class="dg-desc">실행 불가 · 버튼 비활성화</div>
+      <div class="dg-tags"><span class="dg-tag">rm -rf /</span><span class="dg-tag">mkfs</span><span class="dg-tag">dd if=/dev/zero</span><span class="dg-tag">shutdown</span><span class="dg-tag">:(){ :|:& };:</span><span class="dg-tag">init 0</span></div>
+    </div>
+    <div class="dg-card dg-c rv">
+      <div class="dg-lvl">🟠 CAUTION — 확인 필요</div>
+      <div class="dg-desc">"yes" 직접 입력 시에만 실행</div>
+      <div class="dg-tags"><span class="dg-tag">kill -9 1</span><span class="dg-tag">iptables -F</span><span class="dg-tag">userdel</span><span class="dg-tag">ifconfig down</span><span class="dg-tag">systemctl stop</span></div>
+    </div>
+    <div class="dg-card dg-w rv">
+      <div class="dg-lvl">🟡 WARNING — 경고 후 실행</div>
+      <div class="dg-desc">3초 경고 배너 표시 후 실행</div>
+      <div class="dg-tags"><span class="dg-tag">curl | bash</span><span class="dg-tag">wget | bash</span><span class="dg-tag">fdisk</span><span class="dg-tag">parted</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- AI MODELS -->
+<section id="ai-models">
+  <div class="sec-hd rv"><h2>지원 AI 모델</h2><p>클라우드부터 로컬까지, 원하는 모델을 자유롭게 선택하세요</p></div>
+  <div class="models-row">
+    <div class="model-card rv"><div class="mi">🧠</div><div class="mn">Claude</div><div class="ms">Anthropic</div></div>
+    <div class="model-card rv" style="transition-delay:.1s"><div class="mi">⚡</div><div class="mn">OpenAI</div><div class="ms">GPT-4o / o3</div></div>
+    <div class="model-card rv" style="transition-delay:.2s"><div class="mi">✨</div><div class="mn">Gemini</div><div class="ms">Google</div></div>
+    <div class="model-card rv" style="transition-delay:.3s"><div class="mi">🦙</div><div class="mn">Ollama</div><div class="ms">로컬 모델</div></div>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section id="architecture">
+  <div class="sec-hd rv"><h2>기술 스택</h2><p>WPF 백엔드와 React 프론트엔드의 완벽한 조화</p></div>
+  <div class="arch-wrap rv">
+    <div class="arch-box">
+      <h4>🖥 WPF 백엔드 (.NET 8)</h4>
+      <div class="ai-item"><span class="ai-dot"></span>WPF Shell (MainWindow / App)</div>
+      <div class="ai-item"><span class="ai-dot"></span>IPC Hub (IpcHandler.cs)</div>
+      <div class="ai-item"><span class="ai-dot"></span>AI Service Manager</div>
+      <div class="ai-item"><span class="ai-dot"></span>SshService (SSH.NET)</div>
+      <div class="ai-item"><span class="ai-dot"></span>보안 저장소 (DPAPI)</div>
+    </div>
+    <div class="arch-mid">
+      <div class="arch-line"></div>
+      <span style="color:var(--cyan-b);font-size:.65rem">postMessage<br>IPC<br>JSON-RPC</span>
+      <div class="arch-line"></div>
+    </div>
+    <div class="arch-box">
+      <h4>🌐 React 프론트엔드 (React 19)</h4>
+      <div class="ai-item"><span class="ai-dot ai-dot-p"></span>App.tsx (2패널 레이아웃)</div>
+      <div class="ai-item"><span class="ai-dot ai-dot-p"></span>ipcBridge.ts (WPF 통신)</div>
+      <div class="ai-item"><span class="ai-dot ai-dot-p"></span>useAITerminal.ts (834 LoC)</div>
+      <div class="ai-item"><span class="ai-dot ai-dot-p"></span>commandSafety.ts (위험 차단)</div>
+      <div class="ai-item"><span class="ai-dot ai-dot-p"></span>xterm.js (SSH 패널)</div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section id="cta">
+  <div class="cta-glow"></div>
+  <h2 class="rv">지금 바로 시작하세요</h2>
+  <p class="rv">AI와 함께하는 더 스마트한 서버 관리 경험</p>
+  <div class="hero-btns rv">
+    <button class="btn-p">⬇ 다운로드 (Windows)</button>
+    <button class="btn-o">📖 문서 보기</button>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="fl">AITTY.EXE</div>
+  <div>WPF .NET 8 · React 19 · SSH.NET · WebView2 · xterm.js</div>
+  <div>v0.2.6 · © 2026 Aitty</div>
+</footer>
+
+<script>
+/* Particle Canvas */
+const cvs=document.getElementById('cvs'),ctx=cvs.getContext('2d');
+let pts=[];
+const resize=()=>{cvs.width=innerWidth;cvs.height=innerHeight;};
+resize();addEventListener('resize',resize);
+class P{
+  constructor(){this.r();}
+  r(){this.x=Math.random()*cvs.width;this.y=Math.random()*cvs.height;this.vx=(Math.random()-.5)*.35;this.vy=(Math.random()-.5)*.35;this.sz=Math.random()*1.4+.4;this.a=Math.random()*.18+.06;this.col=Math.random()>.5?'14,165,233':'124,58,237';}
+  u(){this.x+=this.vx;this.y+=this.vy;if(this.x<0||this.x>cvs.width||this.y<0||this.y>cvs.height)this.r();}
+  d(){ctx.beginPath();ctx.arc(this.x,this.y,this.sz,0,Math.PI*2);ctx.fillStyle=`rgba(${this.col},${this.a})`;ctx.fill();}
+}
+for(let i=0;i<100;i++)pts.push(new P());
+const connect=()=>{for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){const dx=pts[i].x-pts[j].x,dy=pts[i].y-pts[j].y,d=Math.sqrt(dx*dx+dy*dy);if(d<90){ctx.beginPath();ctx.strokeStyle=`rgba(14,165,233,${.06*(1-d/90)})`;ctx.lineWidth=.5;ctx.moveTo(pts[i].x,pts[i].y);ctx.lineTo(pts[j].x,pts[j].y);ctx.stroke();}}};
+const animP=()=>{ctx.clearRect(0,0,cvs.width,cvs.height);pts.forEach(p=>{p.u();p.d();});connect();requestAnimationFrame(animP);};
+animP();
+
+/* Scroll Reveal */
+const ro=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('on');});},{threshold:.12});
+document.querySelectorAll('.rv').forEach(el=>ro.observe(el));
+
+/* Counter */
+const co=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(!e.isIntersecting)return;
+    e.target.querySelectorAll('.stat-n').forEach(el=>{
+      const t=+el.dataset.t,s=el.dataset.s||'';
+      const dur=1400,st=performance.now();
+      const step=now=>{const p=Math.min((now-st)/dur,1),ease=1-Math.pow(1-p,3);el.textContent=Math.round(t*ease)+s;if(p<1)requestAnimationFrame(step);};
+      requestAnimationFrame(step);
+    });
+    co.unobserve(e.target);
+  });
+},{threshold:.3});
+const si=document.querySelector('.stats-inner');
+if(si)co.observe(si);
+
+/* Active Nav */
+const secs=['hero','story','features','security','ai-models','architecture'];
+const navLinks=document.querySelectorAll('.nav-links a');
+const no=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){navLinks.forEach(a=>a.classList.remove('active'));const link=document.querySelector(`.nav-links a[href="#${e.target.id}"]`);if(link)link.classList.add('active');}});
+},{threshold:.3});
+secs.forEach(id=>{const el=document.getElementById(id);if(el)no.observe(el);});
+
+/* Mouse parallax */
+addEventListener('mousemove',e=>{const x=(e.clientX/innerWidth-.5)*14,y=(e.clientY/innerHeight-.5)*14;const h=document.getElementById('hero');if(h)h.style.transform=`translate(${x*.25}px,${y*.25}px)`;});
+</script>
+</body>
+</html>

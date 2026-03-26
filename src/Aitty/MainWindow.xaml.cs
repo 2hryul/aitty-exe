@@ -78,14 +78,12 @@ public partial class MainWindow : Window
     {
         try
         {
-            // WebView2 user data → %LOCALAPPDATA%\Aitty (빌드 간 안전)
-            var userDataFolder = System.IO.Path.Combine(
+            // WebView2 user data → %LOCALAPPDATA%\Aitty\WebView2
+            var baseDataFolder = System.IO.Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Aitty", "WebView2");
-            Directory.CreateDirectory(userDataFolder);
+                "Aitty");
 
-            var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
-            await webView.EnsureCoreWebView2Async(env);
+            await InitializeWebView2Async(baseDataFolder);
 
             // ── 이벤트 핸들러 ─────────────────────────────────
             webView.CoreWebView2.NavigationCompleted += (s, args) =>
@@ -143,6 +141,69 @@ public partial class MainWindow : Window
             MessageBox.Show($"WebView2 초기화 실패:\n{ex.Message}\n\n{ex.StackTrace}",
                 "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    /// <summary>
+    /// WebView2 초기화 — 0x8007139F 대응: 잠금 파일 정리 → 재시도 → 새 폴더 폴백
+    /// </summary>
+    private async Task InitializeWebView2Async(string baseDataFolder)
+    {
+        var userDataFolder = System.IO.Path.Combine(baseDataFolder, "WebView2");
+
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                Directory.CreateDirectory(userDataFolder);
+                var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+                await webView.EnsureCoreWebView2Async(env);
+                return; // 성공
+            }
+            catch (System.Runtime.InteropServices.COMException ex) when (attempt < 2)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"WebView2 init attempt {attempt + 1} failed: {ex.HResult:X8} — {ex.Message}");
+
+                if (attempt == 0)
+                {
+                    // 1차 실패: 잠금 파일 정리 후 재시도
+                    CleanWebView2LockFiles(userDataFolder);
+                    await Task.Delay(1500);
+                }
+                else
+                {
+                    // 2차 실패: 새 폴더로 폴백
+                    userDataFolder = System.IO.Path.Combine(baseDataFolder, $"WebView2_{DateTime.Now:yyyyMMdd_HHmmss}");
+                }
+            }
+        }
+
+        // 3차 시도 — 예외 발생 시 상위에서 catch
+        Directory.CreateDirectory(userDataFolder);
+        var finalEnv = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+        await webView.EnsureCoreWebView2Async(finalEnv);
+    }
+
+    private static void CleanWebView2LockFiles(string folder)
+    {
+        try
+        {
+            var ebWebView = System.IO.Path.Combine(folder, "EBWebView");
+            if (!Directory.Exists(ebWebView)) return;
+
+            // SingletonLock, lockfile 등 WebView2 잠금 파일 제거
+            foreach (var lockFile in Directory.GetFiles(ebWebView, "*lock*", SearchOption.TopDirectoryOnly))
+            {
+                try { File.Delete(lockFile); }
+                catch { /* 잠금 해제 실패 — 무시 */ }
+            }
+            foreach (var lockFile in Directory.GetFiles(ebWebView, "*.tmp", SearchOption.TopDirectoryOnly))
+            {
+                try { File.Delete(lockFile); }
+                catch { /* 무시 */ }
+            }
+        }
+        catch { /* 폴더 접근 실패 — 무시 */ }
     }
 
     private void MenuExit_Click(object sender, RoutedEventArgs e) => Close();

@@ -199,7 +199,7 @@ public class GeminiService : IAiService
         {
             try
             {
-                var fullContent = await DoStreamAsync(onChunk, ct);
+                var fullContent = await DoStreamAsync(onChunk, ct).ConfigureAwait(false);
                 sw.Stop();
                 lock (_historyLock)
                     _history.Add(new AiChatMessage { Role = "assistant", Content = fullContent });
@@ -225,7 +225,7 @@ public class GeminiService : IAiService
 
                 var wait = ParseRetryDelaySec(ex) ?? RetryWaitSeconds[attempt];
                 onChunk($"\r\n\x1b[33m⏳ Gemini 요청 한도. {wait}초 후 재시도 ({attempt + 1}/{MaxRetries - 1})...\x1b[0m\r\n");
-                await Task.Delay(TimeSpan.FromSeconds(wait), ct);
+                await Task.Delay(TimeSpan.FromSeconds(wait), ct).ConfigureAwait(false);
             }
         }
 
@@ -251,20 +251,24 @@ public class GeminiService : IAiService
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+            .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            var errorBody = await response.Content.ReadAsStringAsync(ct)
+                .ConfigureAwait(false);
             throw new Exception(BuildApiError(response.StatusCode, errorBody));
         }
 
         var builder = new StringBuilder();
-        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var stream = await response.Content.ReadAsStreamAsync(ct)
+            .ConfigureAwait(false);
         using var reader = new StreamReader(stream);
 
         while (!reader.EndOfStream && !ct.IsCancellationRequested)
         {
-            var line = await reader.ReadLineAsync(ct);
+            var line = await reader.ReadLineAsync(ct)
+                .ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(line)) continue;
             if (!line.StartsWith("data: ")) continue;
 

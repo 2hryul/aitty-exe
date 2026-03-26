@@ -177,6 +177,10 @@ export function useAITerminal(): UseAITerminalReturn {
   useEffect(() => { providersRef.current = providers }, [providers])
   useEffect(() => {
     try { localStorage.setItem('aitty.saveApiLog', saveApiLog ? '1' : '0') } catch { /* ignore */ }
+    // C# SessionService에 저장 활성화 여부 동기화 (앱 종료 시 Save() 게이팅)
+    if (isWebView2()) {
+      session.setSaveEnabled(saveApiLog).catch(() => { /* non-critical */ })
+    }
   }, [saveApiLog])
   useEffect(() => {
     try { localStorage.setItem('aitty.endpointUrl', endpointUrl) } catch { /* ignore */ }
@@ -627,13 +631,19 @@ export function useAITerminal(): UseAITerminalReturn {
     const chunkBuffer: string[] = []
     let animationDone = false
     const contentRef = { current: '' }
+    // Chat 패널 re-render를 ~80ms 단위로 배치 처리 (청크마다 re-render 방지)
+    let chatUpdateTimer: ReturnType<typeof setTimeout> | null = null
     const streamPromise = ai.stream(message, (chunk) => {
       if (!isProcessingRef.current) return
       if (animationDone) term.write(chunk)
       else chunkBuffer.push(chunk)
-      // Chat tab sync: accumulate content
       contentRef.current += chunk
-      setChatMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: contentRef.current } : m))
+      if (chatUpdateTimer === null) {
+        chatUpdateTimer = setTimeout(() => {
+          chatUpdateTimer = null
+          setChatMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: contentRef.current } : m))
+        }, 80)
+      }
     })
 
     const randomMsg = THINKING_MESSAGES[Math.floor(Math.random() * THINKING_MESSAGES.length)]
@@ -664,9 +674,16 @@ export function useAITerminal(): UseAITerminalReturn {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error'
       term.writeln(`\r\n\x1b[31mError: ${errorMsg}\x1b[0m`)
     } finally {
+      // 대기 중 타이머 취소 후 최종 상태 1회 반영
+      if (chatUpdateTimer !== null) {
+        clearTimeout(chatUpdateTimer)
+        chatUpdateTimer = null
+      }
       isProcessingRef.current = false
       setIsStreaming(false)
-      setChatMessages(prev => prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m))
+      setChatMessages(prev => prev.map(m =>
+        m.id === assistantId ? { ...m, isStreaming: false, content: contentRef.current } : m
+      ))
       window.dispatchEvent(new CustomEvent('ai-streaming-end'))
     }
   }, [])
@@ -726,18 +743,19 @@ export function useAITerminal(): UseAITerminalReturn {
     if (isWebView2()) {
       ;(async () => {
         try {
-          const saved = await session.getRestored()
-          if (saved && saved.messageCount > 0) {
-            setCurrentModel(saved.model)
-            setEngineName(saved.engine)
-            setActiveProvider(saved.provider)
-            if (saved.systemPrompt) setSystemPrompt(saved.systemPrompt)
-            const date = new Date(saved.savedAt).toLocaleString('ko-KR')
-            term.writeln(`\x1b[2m[세션 복원: ${date} | ${saved.messageCount}개 메시지]\x1b[0m`)
+          // 로그저장이 꺼져 있으면 세션 저장/복원 전체 스킵
+          const saveEnabled = localStorage.getItem('aitty.saveApiLog') !== '0'
+          if (saveEnabled) {
+            const saved = await session.getRestored()
+            if (saved && saved.messageCount > 0) {
+              setCurrentModel(saved.model)
+              setEngineName(saved.engine)
+              setActiveProvider(saved.provider)
+              if (saved.systemPrompt) setSystemPrompt(saved.systemPrompt)
+              const date = new Date(saved.savedAt).toLocaleString('ko-KR')
+              term.writeln(`\x1b[2m[세션 복원: ${date} | ${saved.messageCount}개 메시지]\x1b[0m`)
 
-            // Load chat history for Chat tab (only when 로그저장 is enabled)
-            const logEnabled = localStorage.getItem('aitty.saveApiLog') !== '0'
-            if (logEnabled) {
+              // Chat 탭 히스토리 복원
               try {
                 const history = await ai.history()
                 if (history.messages?.length) {

@@ -26,10 +26,14 @@ export default function ChatPanel({ messages, isStreaming, sshConnected, onRunCo
       const match = /language-(\w+)/.exec(className || '')
       const codeStr = String(children).replace(/\n$/, '')
 
-      if (match) {
+      // 블록 코드: 언어 태그 있거나 멀티라인 → CodeBlock (Run 버튼 + 안전 검사)
+      // 인라인 코드: 단일 줄 + 언어 태그 없음 → 일반 <code>
+      const isBlock = match !== null || codeStr.includes('\n')
+
+      if (isBlock) {
         return (
           <CodeBlock
-            language={match[1]}
+            language={match ? match[1] : ''}
             code={codeStr}
             sshConnected={sshConnected}
             onRunCommand={onRunCommand}

@@ -16,9 +16,16 @@ public class SessionService
     private static readonly JsonSerializerOptions WriteOptions =
         new() { WriteIndented = true };
 
-    /// <summary>앱 종료 시 동기 저장 (파일 소용량, 블로킹 무방).</summary>
+    /// <summary>
+    /// 세션 저장 활성화 여부. React의 '로그저장' 체크박스와 동기화됨.
+    /// false일 때 Save()는 아무 동작도 하지 않는다.
+    /// </summary>
+    public bool SaveEnabled { get; set; } = true;
+
+    /// <summary>앱 종료 시 동기 저장 (파일 소용량, 블로킹 무방). SaveEnabled=false이면 스킵.</summary>
     public void Save(SessionData data)
     {
+        if (!SaveEnabled) return;
         var dir = Path.GetDirectoryName(SessionPath)!;
         Directory.CreateDirectory(dir);
         File.WriteAllText(SessionPath, JsonSerializer.Serialize(data, WriteOptions));

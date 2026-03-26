@@ -210,6 +210,26 @@ export const ai = {
     createStreamRequest<{ content: string }>('ai:ssh:suggest-command', {}, onChunk),
 }
 
+export const security = {
+  browseScripts: () => invoke<{
+    selected: boolean
+    files: Array<{ name: string; path: string; size: number }>
+  }>('security:browse-scripts'),
+
+  deploy: (files: string[]) => invoke<{
+    success: boolean
+    files: string[]
+    remoteDir: string
+  }>('security:deploy', { files }),
+
+  run: (func: string, useSudo: boolean = false) => invoke<{
+    function: string
+    status: 'pass' | 'fail' | 'na' | 'fixed' | 'error' | 'unknown'
+    reason: string
+    output: string
+  }>('security:run', { function: func, useSudo }),
+}
+
 export const app = {
   version: () => invoke<{ version: string }>('app:version'),
 }
@@ -226,6 +246,8 @@ export interface RestoredSession {
 export const session = {
   /** 앱 시작 시 자동 복원된 세션 정보 반환. 복원 없으면 null. */
   getRestored: () => invoke<RestoredSession | null>('session:get-restored'),
+  /** 로그저장 체크박스 상태를 C# SessionService에 동기화. */
+  setSaveEnabled: (enabled: boolean) => invoke<{ success: boolean; saveEnabled: boolean }>('session:set-save-enabled', { enabled }),
 }
 
 init()

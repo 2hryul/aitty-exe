@@ -36,6 +36,13 @@ const DANGER_PATTERNS: DangerPattern[] = [
   { pattern: /\bchmod\s+(-[a-zA-Z]*R|-[a-zA-Z]*R[a-zA-Z]*)\s+777\s+\/\s*$/, reason: '전체 파일 권한 777 개방', alternative: 'chmod 755 /specific/dir' },
   { pattern: /\bchown\s+(-[a-zA-Z]*R|-[a-zA-Z]*R[a-zA-Z]*)\s+\w+\s+\/\s*$/, reason: '루트 전체 소유자 변경', alternative: 'chown -R user /home/user' },
   { pattern: /\bchown\s+\w+\s+(-[a-zA-Z]*R|-[a-zA-Z]*R[a-zA-Z]*)\s+\/\s*$/, reason: '루트 전체 소유자 변경', alternative: 'chown -R user /home/user' },
+
+  // 시스템 종료/재시작 — SSH 원격 연결 영구 차단
+  { pattern: /\b(shutdown|poweroff|halt)\b/, reason: '시스템 종료 — SSH 원격 연결 영구 차단', alternative: '관리자에게 종료 요청 또는 systemctl suspend' },
+  { pattern: /\breboot(\s|$)/, reason: '시스템 재시작 — SSH 연결 차단 (재시작 후 수동 재접속 필요)', alternative: '관리자에게 재시작 요청' },
+  { pattern: /\bsystemctl\s+(poweroff|halt|reboot)\b/, reason: 'systemctl 시스템 종료/재시작', alternative: '관리자에게 문의' },
+  { pattern: /\binit\s+[06]\b/, reason: '런레벨 0(종료)/6(재시작) 전환', alternative: '관리자에게 문의' },
+  { pattern: /\btelinit\s+[06]\b/, reason: '런레벨 0(종료)/6(재시작) 전환 (telinit)', alternative: '관리자에게 문의' },
 ]
 
 // ── 🟠 caution — 시스템에 심각한 영향 ──────────────────────────

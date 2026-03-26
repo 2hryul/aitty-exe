@@ -11,42 +11,83 @@ interface CodeBlockProps {
 }
 
 const SAFETY_BUTTON_CONFIG: Record<Exclude<SafetyLevel, 'safe'>, { label: string; className: string; badge: string }> = {
-  danger:  { label: '🚫 Blocked', className: 'code-action-danger',  badge: '🔴 위험' },
-  caution: { label: '⚠️ Blocked', className: 'code-action-caution', badge: '🟠 주의' },
-  warning: { label: '⚠ Blocked',  className: 'code-action-warning', badge: '🟡 경고' },
+  danger:  { label: '🚫 Blocked',   className: 'code-action-danger',  badge: '🔴 위험' },
+  caution: { label: '⚠️ 확인 필요', className: 'code-action-caution', badge: '🟠 주의' },
+  warning: { label: '⚠ Run',        className: 'code-action-warning', badge: '🟡 경고' },
 }
 
 export default function CodeBlock({ language, code, sshConnected, onRunCommand }: CodeBlockProps) {
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied]                     = useState(false)
+  const [pendingConfirm, setPendingConfirm]     = useState(false)
+  const [confirmInput, setConfirmInput]         = useState('')
+  const [showWarningBanner, setShowWarningBanner] = useState(false)
 
-  const isShellLang = !language || ['bash', 'sh', 'zsh', 'shell', 'console', 'text'].includes(language.toLowerCase())
-  const safety = useMemo(() => isShellLang ? checkCommandSafety(code) : { level: 'safe' as SafetyLevel }, [code, isShellLang])
-  const isBlocked = safety.level !== 'safe'
+  const isShellLang = !language || ['bash', 'sh', 'zsh', 'shell', 'console', 'text',
+    'terminal', 'linux', 'cmd', 'command', 'powershell', 'fish'].includes(language.toLowerCase())
+
+  // 주석·공백 제외 첫 번째 실행 가능 줄 — Copy/Run 대상
+  const firstLine = useMemo(() =>
+    code.split('\n').map(l => l.trim()).find(l => l.length > 0 && !l.startsWith('#'))
+    ?? code.split('\n')[0].trim()
+  , [code])
+
+  const safety = useMemo(() => isShellLang ? checkCommandSafety(firstLine) : { level: 'safe' as SafetyLevel }, [firstLine, isShellLang])
+
+  const isHardBlocked = safety.level === 'danger'
+  const needsConfirm  = safety.level === 'caution'
+  const isWarnRun     = safety.level === 'warning'
+  const isBlocked     = isHardBlocked  // 버튼 disabled 판단용
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(code)
+      await navigator.clipboard.writeText(firstLine)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch { /* clipboard not available */ }
-  }, [code])
+  }, [firstLine])
+
+  const handleConfirmSubmit = useCallback(() => {
+    if (confirmInput.trim().toLowerCase() === 'yes') {
+      setPendingConfirm(false)
+      setConfirmInput('')
+      onRunCommand?.(firstLine)
+    }
+  }, [confirmInput, firstLine, onRunCommand])
+
+  const handleConfirmKey = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleConfirmSubmit()
+    if (e.key === 'Escape') { setPendingConfirm(false); setConfirmInput('') }
+  }, [handleConfirmSubmit])
 
   const handleRun = useCallback(() => {
-    if (isBlocked) {
-      alert(formatSafetyAlert(safety))
+    if (isHardBlocked) return
+
+    if (needsConfirm) {
+      setPendingConfirm(true)
+      setConfirmInput('')
       return
     }
-    onRunCommand?.(code)
-  }, [code, onRunCommand, isBlocked, safety])
 
-  const btnConfig = isBlocked ? SAFETY_BUTTON_CONFIG[safety.level as Exclude<SafetyLevel, 'safe'>] : null
+    if (isWarnRun) {
+      setShowWarningBanner(true)
+      setTimeout(() => setShowWarningBanner(false), 3000)
+      onRunCommand?.(firstLine)
+      return
+    }
+
+    onRunCommand?.(firstLine)
+  }, [firstLine, onRunCommand, isHardBlocked, needsConfirm, isWarnRun])
+
+  const btnConfig = safety.level !== 'safe'
+    ? SAFETY_BUTTON_CONFIG[safety.level as Exclude<SafetyLevel, 'safe'>]
+    : null
 
   return (
     <div className="code-block">
       <div className="code-block-header">
         <span className="code-block-lang">
           {language || 'text'}
-          {isBlocked && btnConfig && (
+          {safety.level !== 'safe' && btnConfig && (
             <span className={`code-safety-badge ${safety.level}`}>{btnConfig.badge}</span>
           )}
         </span>
@@ -56,21 +97,60 @@ export default function CodeBlock({ language, code, sshConnected, onRunCommand }
           </button>
           {sshConnected && onRunCommand && (
             <button
-              className={`code-action-btn ${isBlocked && btnConfig ? btnConfig.className : 'code-action-run'}`}
+              className={`code-action-btn ${btnConfig ? btnConfig.className : 'code-action-run'}`}
               onClick={handleRun}
               disabled={isBlocked}
-              title={isBlocked ? formatSafetyAlert(safety) : 'Run in SSH Terminal'}
+              title={isHardBlocked ? formatSafetyAlert(safety) : 'Run in SSH Terminal'}
             >
-              {isBlocked && btnConfig ? btnConfig.label : '▶ Run'}
+              {btnConfig ? btnConfig.label : '▶ Run'}
             </button>
           )}
         </div>
       </div>
-      {isBlocked && safety.alternative && (
+
+      {/* caution: "yes" 입력 확인창 */}
+      {pendingConfirm && (
+        <div className="code-confirm-row">
+          <span className="code-confirm-label">
+            ⚠️ {safety.reason} — 실행하려면 <code>yes</code> 입력:
+          </span>
+          <input
+            autoFocus
+            value={confirmInput}
+            onChange={e => setConfirmInput(e.target.value)}
+            onKeyDown={handleConfirmKey}
+            placeholder="yes"
+            className="code-confirm-input"
+          />
+          <button
+            className="code-confirm-ok"
+            onClick={handleConfirmSubmit}
+            disabled={confirmInput.trim().toLowerCase() !== 'yes'}
+          >
+            실행
+          </button>
+          <button
+            className="code-confirm-cancel"
+            onClick={() => { setPendingConfirm(false); setConfirmInput('') }}
+          >
+            취소
+          </button>
+        </div>
+      )}
+
+      {/* warning: 일시 경고 배너 */}
+      {showWarningBanner && (
+        <div className="code-warning-banner">
+          ⚠️ {safety.reason}
+        </div>
+      )}
+
+      {safety.level !== 'safe' && safety.alternative && (
         <div className="code-safety-hint">
           💡 안전한 대안: <code>{safety.alternative}</code>
         </div>
       )}
+
       <SyntaxHighlighter
         language={language || 'text'}
         style={vscDarkPlus}
