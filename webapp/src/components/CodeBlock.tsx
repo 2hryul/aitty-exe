@@ -159,6 +159,8 @@ export default function CodeBlock({ language, code, sshConnected, onRunCommand }
           borderRadius: '0 0 6px 6px',
           fontSize: '12px',
           lineHeight: '1.4',
+          background: '#012456',
+          fontFamily: '"Cascadia Code", "D2Coding", "Consolas", monospace',
         }}
         wrapLongLines
       >

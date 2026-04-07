@@ -26,8 +26,53 @@ public class SshService : IDisposable
 
     public SshConnectionState State => _state;
     public bool IsConnected =>
+        _state.IsConnected &&
         _client?.IsConnected == true &&
         (_shellStream == null || _shellStream.CanRead);
+
+    /// <summary>
+    /// 다층 연결 상태 확인 — exit 명령 후 빠른 감지.
+    /// Layer 3: 셸 스트림 쓰기 프로브 + Layer 4: SSH KeepAlive
+    /// </summary>
+    public bool PingAlive()
+    {
+        if (_client is null || !_client.IsConnected) return false;
+
+        // _state.IsConnected가 이미 false면 (Layer 1/2에서 감지됨) 즉시 반환
+        if (!_state.IsConnected) return false;
+
+        // [Layer 3] 셸 채널 활성 여부 — 쓰기 시도로 확인
+        // exit 후 채널이 닫히면 WriteByte가 예외 발생
+        if (_shellStream != null)
+        {
+            try
+            {
+                lock (_streamLock)
+                {
+                    _shellStream.Flush();
+                }
+            }
+            catch
+            {
+                _state.IsConnected = false;
+                return false;
+            }
+        }
+
+        // [Layer 4] SSH 전송 계층 KeepAlive — TCP 끊김 백업 감지
+        try
+        {
+#pragma warning disable CS0618
+            _client.SendKeepAlive();
+#pragma warning restore CS0618
+            return _client.IsConnected;
+        }
+        catch
+        {
+            _state.IsConnected = false;
+            return false;
+        }
+    }
 
     public async Task<bool> ConnectAsync(SshConnection connection)
     {
@@ -65,8 +110,12 @@ public class SshService : IDisposable
 
                 _client = new SshClient(connInfo);
                 _client.KeepAliveInterval = TimeSpan.FromSeconds(15);
+                // 원격 측 연결 종료 즉시 감지
+                _client.ErrorOccurred += (_, _) => { _state.IsConnected = false; };
                 _client.Connect();
                 _shellStream = _client.CreateShellStream("xterm", 120, 40, 800, 600, 4096);
+                // 셸 스트림 에러(exit 등) 즉시 감지
+                _shellStream.ErrorOccurred += (_, _) => { _state.IsConnected = false; };
             });
 
             lock (_bufferLock)
@@ -172,10 +221,27 @@ public class SshService : IDisposable
             if (_shellStream is null || !_shellStream.CanRead) return null;
             if (!_shellStream.DataAvailable) return null;
             try { output = _shellStream.Read(); }
-            catch { return null; }  // 채널 닫힘 — 헬스체크에서 감지됨
+            catch
+            {
+                // [Layer 2] 채널 닫힘 → 즉시 상태 업데이트
+                _state.IsConnected = false;
+                return null;
+            }
         }
 
         Remember(output);
+
+        // [Layer 1] logout/exit 출력 패턴 감지 → 셸 종료 즉시 반영
+        if (!string.IsNullOrEmpty(output))
+        {
+            var stripped = AnsiRegex.Replace(output, "").Trim();
+            if (stripped.Equals("logout", StringComparison.OrdinalIgnoreCase) ||
+                (stripped.StartsWith("Connection to ", StringComparison.OrdinalIgnoreCase) &&
+                 stripped.Contains("closed", StringComparison.OrdinalIgnoreCase)))
+            {
+                _state.IsConnected = false;
+            }
+        }
 
         // 명령어 실행 후 출력을 마지막 출력 버퍼에 수집 (ANSI 코드 제거)
         lock (_bufferLock)

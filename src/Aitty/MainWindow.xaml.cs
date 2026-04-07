@@ -1,7 +1,6 @@
 using System.IO;
 using System.Text;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using Microsoft.Web.WebView2.Core;
 using Aitty.Ipc;
@@ -40,6 +39,14 @@ public partial class MainWindow : Window
 
         Loaded += MainWindow_Loaded;
 
+        // 최대화 시 WebView2 마진 제거, 복원 시 리사이즈 마진 복원
+        StateChanged += (_, _) =>
+        {
+            webView.Margin = WindowState == WindowState.Maximized
+                ? new Thickness(0)
+                : new Thickness(4);
+        };
+
         // 앱 종료 시 세션 자동 저장 (동기, 소용량)
         Closing += (_, _) =>
         {
@@ -50,29 +57,14 @@ public partial class MainWindow : Window
         var exitBinding = new KeyBinding(new RelayCommand(_ => Close()), new KeyGesture(Key.Q, ModifierKeys.Control));
         InputBindings.Add(exitBinding);
 
-        // [H-2] DevTools 메뉴: Debug 빌드에서만 동적으로 추가
-#if DEBUG
-        AddDebugMenuItems();
-#endif
-    }
+        var reloadBinding = new KeyBinding(new RelayCommand(_ => webView.CoreWebView2?.Reload()), new KeyGesture(Key.R, ModifierKeys.Control));
+        InputBindings.Add(reloadBinding);
 
 #if DEBUG
-    private void AddDebugMenuItems()
-    {
-        var devToolsItem = new MenuItem
-        {
-            Header = "Toggle _DevTools",
-            InputGestureText = "F12"
-        };
-        devToolsItem.Click += MenuDevTools_Click;
-
-        if (viewMenu is not null)
-            viewMenu.Items.Add(devToolsItem);
-    }
-
-    private void MenuDevTools_Click(object sender, RoutedEventArgs e)
-        => webView.CoreWebView2?.OpenDevToolsWindow();
+        var devToolsBinding = new KeyBinding(new RelayCommand(_ => webView.CoreWebView2?.OpenDevToolsWindow()), new KeyGesture(Key.F12));
+        InputBindings.Add(devToolsBinding);
 #endif
+    }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
@@ -84,6 +76,8 @@ public partial class MainWindow : Window
                 "Aitty");
 
             await InitializeWebView2Async(baseDataFolder);
+
+            webView.CoreWebView2.Settings.IsNonClientRegionSupportEnabled = true;
 
             // ── 이벤트 핸들러 ─────────────────────────────────
             webView.CoreWebView2.NavigationCompleted += (s, args) =>
@@ -205,9 +199,6 @@ public partial class MainWindow : Window
         }
         catch { /* 폴더 접근 실패 — 무시 */ }
     }
-
-    private void MenuExit_Click(object sender, RoutedEventArgs e) => Close();
-    private void MenuReload_Click(object sender, RoutedEventArgs e) => webView.CoreWebView2?.Reload();
 
     protected override void OnClosed(EventArgs e)
     {

@@ -232,6 +232,9 @@ export const security = {
 
 export const app = {
   version: () => invoke<{ version: string }>('app:version'),
+  windowMinimize: () => invoke<{ success: boolean }>('app:window-minimize'),
+  windowMaximize: () => invoke<{ success: boolean }>('app:window-maximize'),
+  windowClose: () => invoke<{ success: boolean }>('app:window-close'),
 }
 
 export interface RestoredSession {

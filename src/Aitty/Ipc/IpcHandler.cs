@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.IO;
+using System.Windows;
 using Microsoft.Web.WebView2.Wpf;
 using Microsoft.Web.WebView2.Core;
 using Aitty.Models;
@@ -155,6 +156,9 @@ public class IpcHandler
             "session:set-save-enabled" => HandleSessionSetSaveEnabled(msg.Payload),
 
             "app:version"              => GetAppVersion(),
+            "app:window-minimize"      => HandleWindowMinimize(),
+            "app:window-maximize"      => HandleWindowMaximize(),
+            "app:window-close"         => HandleWindowClose(),
             _                          => throw new NotSupportedException($"Unknown IPC type: {msg.Type}")
         };
     }
@@ -228,8 +232,10 @@ public class IpcHandler
 
     private object HandleSshState()
     {
+        // exit 후 빠른 감지를 위해 즉시 KeepAlive 전송
+        var alive = _sshService.IsConnected ? _sshService.PingAlive() : false;
         var state = _sshService.State;
-        return new { isConnected = _sshService.IsConnected, isConnecting = state.IsConnecting, error = state.Error, host = state.Connection?.Host, connectionTime = state.ConnectionTime?.ToString("o") };
+        return new { isConnected = alive, isConnecting = state.IsConnecting, error = state.Error, host = state.Connection?.Host, connectionTime = state.ConnectionTime?.ToString("o") };
     }
 
     private object HandleSshShellWrite(object? payload) { _sshService.WriteToShell(DeserializePayload<ShellWritePayload>(payload).Data); return new { success = true }; }
@@ -467,6 +473,41 @@ public class IpcHandler
     {
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         return new { version = version?.ToString() ?? "0.2.0" };
+    }
+
+    // ── Window Control ────────────────────────────────────────── //
+
+    private object? HandleWindowMinimize()
+    {
+        _webView.Dispatcher.Invoke(() =>
+        {
+            var window = Window.GetWindow(_webView);
+            if (window != null) window.WindowState = WindowState.Minimized;
+        });
+        return new { success = true };
+    }
+
+    private object? HandleWindowMaximize()
+    {
+        _webView.Dispatcher.Invoke(() =>
+        {
+            var window = Window.GetWindow(_webView);
+            if (window != null)
+                window.WindowState = window.WindowState == WindowState.Maximized
+                    ? WindowState.Normal
+                    : WindowState.Maximized;
+        });
+        return new { success = true };
+    }
+
+    private object? HandleWindowClose()
+    {
+        _webView.Dispatcher.Invoke(() =>
+        {
+            var window = Window.GetWindow(_webView);
+            window?.Close();
+        });
+        return new { success = true };
     }
 
     // ── 세션 ──────────────────────────────────────────────── //

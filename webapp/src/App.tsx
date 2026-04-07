@@ -3,6 +3,8 @@ import { config as configBridge, app as appBridge } from '@bridge/ipcBridge'
 import { logger } from '@utils/logger'
 import { SSHTerminal } from '@components/SSHTerminal'
 import { AITerminal } from '@components/AITerminal'
+import { TitleBar } from '@components/TitleBar'
+import { IconSidebar } from '@components/IconSidebar'
 import type { AppConfig } from '@app-types/config'
 import type { SSHConnection } from '@app-types/ssh'
 import './App.css'
@@ -24,6 +26,9 @@ function App() {
   const [sshConnection, setSshConnection] = useState<SSHConnection | undefined>()
   const [sshConnected, setSshConnected] = useState(false)
   const [splitRatio, setSplitRatio] = useState(50)  // SSH 패널 너비 %
+  const [activeTab, setActiveTab] = useState<'chat' | 'cli' | 'security'>('chat')
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [aiStatus, setAiStatus] = useState<{ model: string; configured: boolean; provider: string }>({ model: '', configured: false, provider: '' })
 
   const layoutRef = useRef<HTMLDivElement>(null)
   const isDraggingRef = useRef(false)
@@ -100,9 +105,13 @@ function App() {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1><span className="shinhan">신한DS</span> Aitty <span className="subtitle">(SSH + AI Terminal for Windows{appVersion ? `, v${appVersion}` : ''})</span></h1>
-      </header>
+      <TitleBar
+        appVersion={appVersion}
+        sshConnected={sshConnected}
+        sshHost={sshConnection?.host}
+        aiModel={aiStatus.model}
+        aiConfigured={aiStatus.configured}
+      />
 
       <div className="app-layout" ref={layoutRef}>
         <div className="terminal-panel ssh-panel" style={{ width: `${splitRatio}%` }}>
@@ -118,15 +127,43 @@ function App() {
           className="panel-resizer"
           onMouseDown={handleResizerMouseDown}
           title="Drag to resize"
-        />
+        >
+          <div className="resizer-dots">
+            <span className="resizer-dot" />
+            <span className="resizer-dot" />
+            <span className="resizer-dot" />
+          </div>
+        </div>
 
         <div className="terminal-panel ai-panel" style={{ flex: 1 }}>
-          <AITerminal sshConnected={sshConnected} />
+          <IconSidebar
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            onSettingsClick={() => setIsSettingsOpen(prev => !prev)}
+          />
+          <div className="ai-content-area">
+            <AITerminal
+              sshConnected={sshConnected}
+              activeTab={activeTab}
+              isSettingsOpen={isSettingsOpen}
+              onCloseSettings={() => setIsSettingsOpen(false)}
+              onStatusChange={setAiStatus}
+            />
+          </div>
         </div>
       </div>
 
-      <footer className="app-footer">
-        <p>© 2026 Aitty | 신한DS AX본부</p>
+      <footer className="status-bar">
+        <div className="status-bar-left">
+          <span>{sshConnected ? `SSH: ${sshConnection?.host || ''}` : 'SSH: Disconnected'}</span>
+          <span className="status-separator">|</span>
+          <span>{sshConnection?.username || '\u2014'}</span>
+        </div>
+        <div className="status-bar-right">
+          <span>UTF-8</span>
+          <span className="status-separator">|</span>
+          <span>&copy; 2026 Aitty</span>
+        </div>
       </footer>
     </div>
   )

@@ -5,25 +5,12 @@
         Title="SSH AI Terminal"
         Width="1600" Height="900"
         MinWidth="1200" MinHeight="600"
-        WindowStartupLocation="CenterScreen">
-    <DockPanel>
-        <Menu DockPanel.Dock="Top">
-            <MenuItem Header="_File">
-                <MenuItem Header="E_xit" InputGestureText="Ctrl+Q" Click="MenuExit_Click" />
-            </MenuItem>
-            <MenuItem Header="_Edit">
-                <MenuItem Header="_Undo" InputGestureText="Ctrl+Z" Command="ApplicationCommands.Undo" />
-                <MenuItem Header="_Redo" InputGestureText="Ctrl+Y" Command="ApplicationCommands.Redo" />
-                <Separator />
-                <MenuItem Header="Cu_t" InputGestureText="Ctrl+X" Command="ApplicationCommands.Cut" />
-                <MenuItem Header="_Copy" InputGestureText="Ctrl+C" Command="ApplicationCommands.Copy" />
-                <MenuItem Header="_Paste" InputGestureText="Ctrl+V" Command="ApplicationCommands.Paste" />
-            </MenuItem>
-            <MenuItem x:Name="viewMenu" Header="_View">
-                <MenuItem Header="_Reload" InputGestureText="Ctrl+R" Click="MenuReload_Click" />
-                <!-- DevTools: Debug 빌드에서만 CodeBehind로 동적 추가 [H-2] -->
-            </MenuItem>
-        </Menu>
-        <wv2:WebView2 x:Name="webView" />
-    </DockPanel>
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="0" />
+    </WindowChrome.WindowChrome>
+    <Grid x:Name="rootGrid" Background="#F5F7FA">
+        <wv2:WebView2 x:Name="webView" Margin="4" />
+    </Grid>
 </Window>

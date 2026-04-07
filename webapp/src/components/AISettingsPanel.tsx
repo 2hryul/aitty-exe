@@ -107,17 +107,9 @@ export function AISettingsPanel({
 
       </div>
 
-      {/* 버튼 행 */}
+      {/* 버튼 행: Check / Apply / Model */}
       <div className="settings-button-row">
         <div className="settings-btn-left">
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#9ad89a', fontSize: 12 }}>
-            <input
-              type="checkbox"
-              checked={saveApiLog}
-              onChange={(e) => onSaveApiLogChange(e.target.checked)}
-            />
-            로그저장
-          </label>
           <button type="button" onClick={onCheck} disabled={isBusy}>
             Check
           </button>
@@ -148,13 +140,26 @@ export function AISettingsPanel({
               <option key={model} value={model}>{model}</option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={onToggleSystemPrompt}
-          >
-            시스템 프롬프트
-          </button>
         </div>
+      </div>
+
+      {/* 옵션 행: 시스템 프롬프트 / 로그저장 */}
+      <div className="settings-option-row">
+        <button
+          type="button"
+          onClick={onToggleSystemPrompt}
+          className="settings-btn-sysprompt"
+        >
+          시스템 프롬프트
+        </button>
+        <label className="settings-log-label">
+          <input
+            type="checkbox"
+            checked={saveApiLog}
+            onChange={(e) => onSaveApiLogChange(e.target.checked)}
+          />
+          로그저장
+        </label>
       </div>
 
       {isSystemPromptOpen && (

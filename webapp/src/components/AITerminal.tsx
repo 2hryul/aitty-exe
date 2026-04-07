@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
@@ -6,21 +6,23 @@ import { useTerminalResize } from '@hooks/useTerminalResize'
 import { useAITerminal, charDisplayWidth, isWebView2 } from '@hooks/useAITerminal'
 import { ai, ssh } from '@bridge/ipcBridge'
 import { logger } from '@utils/logger'
-import { AISettingsPanel } from '@components/AISettingsPanel'
+import { SettingsDrawer } from '@components/SettingsDrawer'
 import ChatPanel from '@components/ChatPanel'
 import SecurityPanel from '@components/SecurityPanel'
 import '@styles/chat.css'
 
 interface AITerminalProps {
   sshConnected?: boolean
+  activeTab: 'chat' | 'cli' | 'security'
+  isSettingsOpen: boolean
+  onCloseSettings: () => void
+  onStatusChange?: (status: { model: string; configured: boolean; provider: string }) => void
 }
 
-export function AITerminal({ sshConnected }: AITerminalProps) {
+export function AITerminal({ sshConnected, activeTab, isSettingsOpen, onCloseSettings, onStatusChange }: AITerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
-  const [activeTab, setActiveTab] = useState<'chat' | 'cli' | 'security'>('chat')
-
   const hook = useAITerminal()
   const {
     termRef,
@@ -35,7 +37,6 @@ export function AITerminal({ sshConnected }: AITerminalProps) {
     isStreaming,
     engineName,
     availableModels,
-    isSettingsOpen,
     isSystemPromptOpen,
     systemPrompt,
     endpointUrl,
@@ -48,7 +49,6 @@ export function AITerminal({ sshConnected }: AITerminalProps) {
     saveApiLog,
     chatMessages,
 
-    setIsSettingsOpen,
     setIsSystemPromptOpen,
     setSystemPrompt,
     setApiKey,
@@ -203,6 +203,14 @@ export function AITerminal({ sshConnected }: AITerminalProps) {
   const requiresApiKey = currentProviderInfo?.requiresApiKey ?? false
   const providerDisplayName = currentProviderInfo?.name ?? activeProvider
 
+  useEffect(() => {
+    onStatusChange?.({
+      model: currentModel,
+      configured: isConfigured && !(requiresApiKey && !apiKey),
+      provider: activeProvider,
+    })
+  }, [currentModel, isConfigured, requiresApiKey, apiKey, activeProvider, onStatusChange])
+
   const handleMarkDirty = useCallback(() => {
     setIsDirty(true)
     setIsApplySuccess(false)
@@ -243,92 +251,24 @@ export function AITerminal({ sshConnected }: AITerminalProps) {
 
   return (
     <div className="ai-terminal local-llm-terminal">
-      <div className="terminal-header">
-        <h2>LLM Terminal</h2>
-        <div className="terminal-status">
-          {isConfigured && !(requiresApiKey && !apiKey) ? (
-            <>
-              <span className="status-badge connected">Ready</span>
-              <span className="status-info">
-                {requiresApiKey ? providerDisplayName : engineName} | {currentModel}
-              </span>
-            </>
-          ) : (
-            <span className="status-badge disconnected">
-              {requiresApiKey && !apiKey
-                ? `${providerDisplayName} Offline — API Key 없음`
-                : `${providerDisplayName} Offline`}
-            </span>
-          )}
-          {isStreaming && <span className="status-badge streaming">Generating</span>}
+      <div className="chat-header">
+        <div className="chat-header-left">
+          <svg className="chat-header-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+          <span className="chat-header-title">AI Chat</span>
         </div>
-        <div className="terminal-controls">
-          <button onClick={() => setIsSettingsOpen(prev => !prev)}>
-            {isSettingsOpen ? 'Hide Settings' : 'Settings'}
+        <div className="chat-header-right">
+          <span className="chat-header-model">{currentModel}</span>
+          <button
+            className="chat-header-analyze"
+            onClick={handleAnalyzeClick}
+            disabled={isBusy}
+          >
+            AI Analyze
           </button>
-          <button onClick={handleClear}>Clear</button>
-          {activeTab === 'cli' && (
-            <button
-              onClick={handleAnalyzeClick}
-              disabled={!isConfigured || isBusy}
-              style={{ color: '#ffc107', borderColor: '#ffc107' }}
-            >
-              AI분석
-            </button>
-          )}
-          {isStreaming && <button onClick={handleCancel}>Cancel</button>}
         </div>
-      </div>
-
-      {isSettingsOpen && (
-        <AISettingsPanel
-          activeProvider={activeProvider}
-          providers={providers}
-          endpointUrl={endpointUrl}
-          apiKey={apiKey}
-          currentModel={currentModel}
-          availableModels={availableModels}
-          systemPrompt={systemPrompt}
-          saveApiLog={saveApiLog}
-          isBusy={isBusy}
-          isDirty={isDirty}
-          isApplySuccess={isApplySuccess}
-          isSystemPromptOpen={isSystemPromptOpen}
-          requiresApiKey={requiresApiKey}
-          providerDisplayName={providerDisplayName}
-          onProviderChange={handleProviderChange}
-          onEndpointChange={handleEndpointChange}
-          onApiKeyChange={setApiKey}
-          onModelChange={handleModelChange}
-          onSystemPromptChange={setSystemPrompt}
-          onSaveApiLogChange={setSaveApiLog}
-          onCheck={handleCheck}
-          onApply={handleApplySettings}
-          onToggleSystemPrompt={() => setIsSystemPromptOpen(prev => !prev)}
-          onMarkDirty={handleMarkDirty}
-        />
-      )}
-
-      {/* Tab Switcher */}
-      <div className="tab-switcher">
-        <button
-          className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
-          onClick={() => setActiveTab('chat')}
-        >
-          <span className="tab-icon">◉</span> Chat
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'cli' ? 'active' : ''}`}
-          onClick={() => setActiveTab('cli')}
-        >
-          <span className="tab-icon">$_</span> CLI
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'security' ? 'active' : ''}`}
-          onClick={() => setActiveTab('security')}
-        >
-          <span className="tab-icon">🛡</span> 보안점검
-        </button>
       </div>
 
       {/* Tab Content */}
@@ -377,12 +317,46 @@ export function AITerminal({ sshConnected }: AITerminalProps) {
           <button
             className="chat-input-btn analyze-btn"
             onClick={handleAnalyzeClick}
-            disabled={!isConfigured || isBusy}
+            disabled={isBusy}
           >
             AI분석
           </button>
+          {isStreaming && (
+            <button className="chat-input-btn cancel-btn" onClick={handleCancel}>
+              Cancel
+            </button>
+          )}
         </div>
       )}
+
+      <SettingsDrawer
+        isOpen={isSettingsOpen}
+        onClose={onCloseSettings}
+        activeProvider={activeProvider}
+        providers={providers}
+        endpointUrl={endpointUrl}
+        apiKey={apiKey}
+        currentModel={currentModel}
+        availableModels={availableModels}
+        systemPrompt={systemPrompt}
+        saveApiLog={saveApiLog}
+        isBusy={isBusy}
+        isDirty={isDirty}
+        isApplySuccess={isApplySuccess}
+        isSystemPromptOpen={isSystemPromptOpen}
+        requiresApiKey={requiresApiKey}
+        providerDisplayName={providerDisplayName}
+        onProviderChange={handleProviderChange}
+        onEndpointChange={handleEndpointChange}
+        onApiKeyChange={setApiKey}
+        onModelChange={handleModelChange}
+        onSystemPromptChange={setSystemPrompt}
+        onSaveApiLogChange={setSaveApiLog}
+        onCheck={handleCheck}
+        onApply={handleApplySettings}
+        onToggleSystemPrompt={() => setIsSystemPromptOpen(prev => !prev)}
+        onMarkDirty={handleMarkDirty}
+      />
     </div>
   )
 }

@@ -471,6 +471,18 @@ export function useAITerminal(): UseAITerminalReturn {
     const term = termRef.current
     if (!term) return
 
+    // AI 미설정 시 안내 메시지 표시 후 종료
+    if (!isConfigured) {
+      const warnMsg: ChatMessage = {
+        id: crypto.randomUUID(), role: 'system',
+        content: '⚠️ AI가 설정되지 않았습니다. Settings에서 AI Provider를 설정하고 Apply를 눌러주세요.',
+        timestamp: Date.now(),
+      }
+      setChatMessages(prev => [...prev, warnMsg])
+      term.writeln('\x1b[33m⚠ AI 미설정 — Settings에서 Provider/API Key 설정 후 Apply를 눌러주세요.\x1b[0m')
+      return
+    }
+
     setIsBusy(true)
     isProcessingRef.current = true
     term.writeln('')
@@ -525,7 +537,7 @@ export function useAITerminal(): UseAITerminalReturn {
       setChatMessages(prev => prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m))
       window.dispatchEvent(new CustomEvent('ai-streaming-end'))
     }
-  }, [writeLine, writePrompt])
+  }, [isConfigured, writeLine, writePrompt])
 
   const printHelp = useCallback(() => {
     const term = termRef.current

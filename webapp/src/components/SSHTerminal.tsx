@@ -18,9 +18,9 @@ export interface SSHTerminalProps {
 }
 
 const POLL_INTERVAL_MIN = 50      // ms — data present
-const POLL_INTERVAL_MAX = 500     // ms — idle ceiling
-const POLL_INTERVAL_STEP = 50     // ms — backoff increment per empty read
-const HEALTH_CHECK_INTERVAL = 4_000  // ms — 5초 이내 disconnect 감지
+const POLL_INTERVAL_MAX = 200     // ms — idle ceiling (500→200: 키입력 지연 축소)
+const POLL_INTERVAL_STEP = 30     // ms — backoff increment per empty read
+const HEALTH_CHECK_INTERVAL = 3_000  // ms — exit 후 빠른 disconnect 감지
 const DEFAULT_SSH_HOST = import.meta.env.VITE_DEFAULT_SSH_HOST || ''
 const DEFAULT_SSH_PORT = import.meta.env.VITE_DEFAULT_SSH_PORT || '22'
 const DEFAULT_SSH_USERNAME = import.meta.env.VITE_DEFAULT_SSH_USERNAME || ''
@@ -31,6 +31,8 @@ export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconn
   const fitAddonRef = useRef<FitAddon | null>(null)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pollIntervalRef = useRef(POLL_INTERVAL_MIN)
+  const pollFnRef = useRef<(() => void) | null>(null)        // poll 함수 참조
+  const acceleratePollRef = useRef<(() => void) | null>(null) // 키입력 시 폴링 가속
   const healthCheckTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isPollingRef = useRef(false)
 
@@ -109,9 +111,25 @@ export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconn
       }
     }
 
+    pollFnRef.current = poll
+
     // sentinel value to indicate "running" before first setTimeout fires
     pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MIN)
   }, [shellRead, stopPolling])
+
+  // 키 입력 시 폴링 즉시 가속 — 유휴 백오프 상태에서 첫 글자 지연 제거
+  const acceleratePolling = useCallback(() => {
+    pollIntervalRef.current = POLL_INTERVAL_MIN
+    if (pollTimerRef.current && pollFnRef.current) {
+      clearTimeout(pollTimerRef.current)
+      pollTimerRef.current = setTimeout(pollFnRef.current, POLL_INTERVAL_MIN)
+    }
+  }, [])
+
+  // ref 동기화
+  useEffect(() => {
+    acceleratePollRef.current = acceleratePolling
+  }, [acceleratePolling])
 
   // ── 10초 SSH 헬스체크 ────────────────────────────────────────
   const stopHealthCheck = useCallback(() => {
@@ -151,19 +169,39 @@ export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconn
     const C = '\x1b[36m'   // cyan
     const D = '\x1b[2;36m' // dim cyan
     const G = '\x1b[32m'   // green
+    const Y = '\x1b[33m'   // yellow
     const R = '\x1b[0m'    // reset
+
+    // ASCII 아트 (pyfiglet standard font, 각 줄 57자)
+    const art = [
+      ' ____  _   _ ___ _   _ _   _    _    _   _   ____  ____',
+      '/ ___|| | | |_ _| \\ | | | | |  / \\  | \\ | | |  _ \\/ ___|',
+      '\\___ \\| |_| || ||  \\| | |_| | / _ \\ |  \\| | | | | \\___ \\',
+      ' ___) |  _  || || |\\  |  _  |/ ___ \\| |\\  | | |_| |___) |',
+      '|____/|_| |_|___|_| \\_|_| |_/_/   \\_\\_| \\_| |____/|____/',
+    ]
+    const separator = '──────────────────────────────────────────────────────────────'
+    const tagline = 'SSH AI Terminal  │  Powered by Arti'
+    const org = '신한DS AX본부'
+    const hint = 'Enter connection details above and press Connect.'
+
+    // 터미널 너비 기준 중앙 정렬 헬퍼
+    const cols = term.cols || 120
+    const pad = (text: string) => {
+      const visible = text.replace(/\x1b\[[0-9;]*m/g, '')  // ANSI 제거 후 길이
+      const left = Math.max(0, Math.floor((cols - visible.length) / 2))
+      return ' '.repeat(left) + text
+    }
+
     term.writeln('')
-    term.writeln(`${C} ____  _   _ ___ _   _ _   _    _    _   _     ____  ____${R}`)
-    term.writeln(`${C}/ ___|| | | |_ _| \\ | | | | |  / \\  | \\ | |   |  _ \\/ ___|${R}`)
-    term.writeln(`${C}\\___ \\| |_| || ||  \\| | |_| | / _ \\ |  \\| |   | | | \\___ \\${R}`)
-    term.writeln(`${C} ___) ||  _  || || |\\  |  _  |/ ___ \\| |\\  |   | |_| |___) |${R}`)
-    term.writeln(`${C}|____/ |_| |_|___|_| \\_|_| |_/_/   \\_\\_| \\_|   |____/|____/${R}`)
+    art.forEach(line => term.writeln(pad(`${C}${line}${R}`)))
     term.writeln('')
-    term.writeln(`${D}──────────────────────────────────────────────────────────────${R}`)
-    term.writeln(`${G}  SSH AI Terminal  │  Powered by Arti ${R}`)
-    term.writeln(`${D}──────────────────────────────────────────────────────────────${R}`)
+    term.writeln(pad(`${D}${separator}${R}`))
+    term.writeln(pad(`${G}${tagline}${R}`))
+    term.writeln(pad(`${Y}${org}${R}`))
+    term.writeln(pad(`${D}${separator}${R}`))
     term.writeln('')
-    term.writeln(`${D}  Enter connection details above and press Connect.${R}`)
+    term.writeln(pad(`${D}${hint}${R}`))
     term.writeln('')
   }
 
@@ -173,28 +211,28 @@ export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconn
 
     const term = new Terminal({
       fontSize: 13,
-      fontFamily: 'Consolas, "Courier New", monospace',
+      fontFamily: '"Cascadia Code", "D2Coding", "Consolas", monospace',
       lineHeight: 1.2,
       theme: {
-        background: '#000000',
-        foreground: '#cccccc',
-        cursor: '#cccccc',
-        black: '#000000',
-        red: '#cc0000',
-        green: '#4e9a06',
-        yellow: '#c4a000',
-        blue: '#3465a4',
-        magenta: '#75507b',
-        cyan: '#06989a',
-        white: '#d3d7cf',
-        brightBlack: '#555753',
-        brightRed: '#ef2929',
-        brightGreen: '#8ae234',
-        brightYellow: '#fce94f',
-        brightBlue: '#729fcf',
-        brightMagenta: '#ad7fa8',
-        brightCyan: '#34e2e2',
-        brightWhite: '#eeeeec',
+        background: '#012456',
+        foreground: '#CCCCCC',
+        cursor: '#CCCCCC',
+        black: '#0C0C0C',
+        red: '#C50F1F',
+        green: '#16C60C',
+        yellow: '#C19C00',
+        blue: '#3B78FF',
+        magenta: '#881798',
+        cyan: '#3A96DD',
+        white: '#CCCCCC',
+        brightBlack: '#767676',
+        brightRed: '#E74856',
+        brightGreen: '#16C60C',
+        brightYellow: '#F9F1A5',
+        brightBlue: '#3B78FF',
+        brightMagenta: '#B4009E',
+        brightCyan: '#61D6D6',
+        brightWhite: '#F2F2F2',
       },
       cols: 120,
       rows: 40,
@@ -217,6 +255,8 @@ export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconn
       shellWriteRef.current(data).catch(err => {
         logger.error('Shell write error', { error: err })
       })
+      // 키 입력 즉시 폴링 가속 — 유휴 백오프(200ms) → MIN(50ms) 전환
+      acceleratePollRef.current?.()
     })
 
     // Send terminal resize to SSH server
@@ -334,137 +374,138 @@ export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconn
 
   return (
     <div className="ssh-terminal">
-      <div className="terminal-header">
-        <h2>SSH Terminal</h2>
-        <div className="terminal-status">
+      <div className="ssh-panel-header">
+        <div className="ssh-panel-header-left">
+          <svg className="ssh-panel-header-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span className="ssh-panel-header-title">SSH TERMINAL</span>
+        </div>
+        <div className="ssh-panel-header-right">
           {sshState.isConnected ? (
             <>
-              <span className="status-badge connected">● Connected</span>
-              <span className="status-info">
-                {sshState.connection?.host}:{sshState.connection?.port}
+              <span className="ssh-status-badge ssh-status-connected">
+                <span className="ssh-status-dot" /> Connected
               </span>
+              <button className="ssh-btn-header" onClick={handleDisconnect}>Disconnect</button>
+              <button className="ssh-btn-header" onClick={handleClear}>Clear</button>
             </>
           ) : sshState.isConnecting ? (
-            <span className="status-badge connecting">◌ Connecting...</span>
+            <span className="ssh-status-badge ssh-status-connecting">Connecting...</span>
           ) : (
-            <span className="status-badge disconnected">○ Disconnected</span>
-          )}
-        </div>
-        <div className="terminal-controls">
-          {sshState.isConnected ? (
-            <>
-              <button onClick={handleClear}>Clear</button>
-              <button onClick={handleDisconnect}>Disconnect</button>
-            </>
-          ) : (
-            <button
-              onClick={() => setShowConnectForm(!showConnectForm)}
-              className={showConnectForm ? 'active' : ''}
-            >
-              {showConnectForm ? 'Hide Form' : 'Connect'}
-            </button>
+            <span className="ssh-status-badge ssh-status-disconnected">Disconnected</span>
           )}
         </div>
       </div>
 
       {showConnectForm && !sshState.isConnected && (
         <form className="ssh-connect-form" onSubmit={handleFormSubmit}>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Host</label>
+          <div className="ssh-form-grid">
+            <div className="ssh-form-field">
+              <label className="ssh-form-label">Host</label>
               <input
                 type="text"
+                className="ssh-form-input"
                 value={formData.host}
                 onChange={e => setFormData(p => ({ ...p, host: e.target.value }))}
                 placeholder="127.0.0.1"
               />
             </div>
-            <div className="form-group form-group-small">
-              <label>Port</label>
+            <div className="ssh-form-field ssh-form-field-port">
+              <label className="ssh-form-label">Port</label>
               <input
                 type="text"
+                className="ssh-form-input"
                 value={formData.port}
                 onChange={e => setFormData(p => ({ ...p, port: e.target.value }))}
                 placeholder="22"
               />
             </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Username</label>
+            <div className="ssh-form-field">
+              <label className="ssh-form-label">Username</label>
               <input
                 type="text"
+                className="ssh-form-input"
                 value={formData.username}
                 onChange={e => setFormData(p => ({ ...p, username: e.target.value }))}
                 placeholder="username"
                 autoComplete="username"
               />
             </div>
-            <div className="form-group">
-              <label>Password</label>
+            <div className="ssh-form-field ssh-form-field-password">
+              <label className="ssh-form-label">Password</label>
               <input
                 type="password"
+                className="ssh-form-input"
                 value={formData.password}
                 onChange={e => setFormData(p => ({ ...p, password: e.target.value }))}
-                placeholder="password"
+                placeholder="••••"
                 autoComplete="current-password"
               />
             </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group" style={{ flex: 1 }}>
-              <label>Private Key (optional)</label>
-              <div style={{ display: 'flex', gap: '4px' }}>
-                {availableKeys.length > 0 ? (
-                  <select
-                    value={formData.privateKey}
-                    onChange={e => setFormData(p => ({ ...p, privateKey: e.target.value }))}
-                    style={{ flex: 1 }}
-                  >
-                    <option value="">None (use password)</option>
-                    {availableKeys.map(k => (
-                      <option key={k} value={k}>{k.replace(/^.*[/\\]/, '')}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    value={formData.privateKey}
-                    onChange={e => setFormData(p => ({ ...p, privateKey: e.target.value }))}
-                    placeholder="~/.ssh/id_rsa"
-                    style={{ flex: 1 }}
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const result = await keysBridge.browse()
-                      if (result.selected && result.path) {
-                        setFormData(p => ({ ...p, privateKey: result.path! }))
-                        if (!availableKeys.includes(result.path))
-                          setAvailableKeys(prev => [...prev, result.path!])
-                        if (!result.valid)
-                          termRef.current?.writeln('\x1b[33m⚠ 선택한 키 파일이 유효하지 않을 수 있습니다.\x1b[0m')
-                      }
-                    } catch { /* dialog cancelled or IPC error */ }
-                  }}
-                  style={{ whiteSpace: 'nowrap', padding: '4px 10px' }}
-                >
-                  Browse...
-                </button>
-              </div>
+            <div className="ssh-form-buttons">
+              <button
+                type="submit"
+                className="ssh-btn-connect"
+                disabled={sshState.isConnecting || !formData.host || !formData.username}
+              >
+                {sshState.isConnecting ? 'Connecting...' : 'Connect'}
+              </button>
+              <button type="button" className="ssh-btn-clear" onClick={handleClear}>Clear</button>
             </div>
           </div>
-          <div className="form-row">
-            <button
-              type="submit"
-              className="connect-btn"
-              disabled={sshState.isConnecting || !formData.host || !formData.username}
-            >
-              {sshState.isConnecting ? 'Connecting...' : 'Connect'}
-            </button>
-          </div>
+
+          <details className="ssh-form-advanced">
+            <summary className="ssh-form-advanced-toggle">Advanced</summary>
+            <div className="ssh-form-advanced-fields">
+              <div className="ssh-form-field">
+                <label className="ssh-form-label">Private Key</label>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {availableKeys.length > 0 ? (
+                    <select
+                      className="ssh-form-input"
+                      value={formData.privateKey}
+                      onChange={e => setFormData(p => ({ ...p, privateKey: e.target.value }))}
+                      style={{ flex: 1 }}
+                    >
+                      <option value="">None (use password)</option>
+                      {availableKeys.map(k => (
+                        <option key={k} value={k}>{k.replace(/^.*[/\\]/, '')}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      className="ssh-form-input"
+                      value={formData.privateKey}
+                      onChange={e => setFormData(p => ({ ...p, privateKey: e.target.value }))}
+                      placeholder="~/.ssh/id_rsa"
+                      style={{ flex: 1 }}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    className="ssh-btn-browse"
+                    onClick={async () => {
+                      try {
+                        const result = await keysBridge.browse()
+                        if (result.selected && result.path) {
+                          setFormData(p => ({ ...p, privateKey: result.path! }))
+                          if (!availableKeys.includes(result.path))
+                            setAvailableKeys(prev => [...prev, result.path!])
+                          if (!result.valid)
+                            termRef.current?.writeln('\x1b[33m⚠ 선택한 키 파일이 유효하지 않을 수 있습니다.\x1b[0m')
+                        }
+                      } catch { /* dialog cancelled or IPC error */ }
+                    }}
+                  >
+                    Browse...
+                  </button>
+                </div>
+              </div>
+            </div>
+          </details>
         </form>
       )}
 
