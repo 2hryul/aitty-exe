@@ -1,19 +1,18 @@
 ; =============================================================================
-;  Aitty SSH Terminal - Inno Setup Script v0.2.6
+;  Aitty SSH Terminal - Inno Setup Script v0.2.8
 ;  Compile: ISCC.exe setup.iss
 ;
-;  변경사항 (v0.2.6):
-;    - 설치 경로 사용자 선택 가능 (DisableDirPage=no)
-;    - 관리자/일반 사용자 권한 선택 가능
-;    - WebView2 Bootstrapper 번들 포함 (오프라인 대비)
+;  변경사항 (v0.2.8):
+;    - PuTTY 호환 CLI 자동접속 (HiWare 연동)
+;    - 위험명령어 통제점 백엔드 방어 계층 추가
 ; =============================================================================
 
 #define AppName      "Aitty SSH Terminal"
-#define AppVersion   "0.2.6"
+#define AppVersion   "0.2.8"
 #define AppPublisher "Shinhan DS AX"
 #define AppExeName   "Aitty.exe"
 #define AppId        "{{8A3F2E1B-4C5D-4E6F-9A0B-1C2D3E4F5A6B}"
-#define SourceDir    "..\dist"
+#define SourceDir    "..\dist\publish"
 #define RedistDir    "redist"
 
 [Setup]
@@ -36,7 +35,7 @@ PrivilegesRequiredOverridesAllowed=dialog
 
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-OutputDir=..\
+OutputDir=..\dist\setup
 OutputBaseFilename=Aitty_Setup_v{#AppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -65,7 +64,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; ── 앱 파일 ──
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "install.ps1,uninstall.ps1,README.txt,*.pdb"
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "install.ps1,uninstall.ps1,README.txt,*.pdb,*.xml"
 
 ; ── WebView2 Bootstrapper (번들) ──
 Source: "{#RedistDir}\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall

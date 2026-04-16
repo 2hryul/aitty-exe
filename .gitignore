@@ -49,6 +49,22 @@ publish_new/
 publish.zip
 aitty.zip
 src/Aitty/wwwroot/
+Aitty_Setup_v*.exe
+Aitty_Setup_v*.zip
+Aitty_Setup_v*/
+
+# --- Three Man Team handoff ---
+handoff/
+agents/
+devlog/
+CLAUDE.md
+MEMORY.md
+
+# --- Personal docs / attachments ---
+*.pptx
+*.pdf
+shellScript.zip
+new-setup.md
 
 # --- Temp scripts ---
 build.ps1
