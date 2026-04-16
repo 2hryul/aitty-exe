@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { config as configBridge, app as appBridge } from '@bridge/ipcBridge'
+import { config as configBridge, app as appBridge, cli as cliBridge, type CliConnectionInfo } from '@bridge/ipcBridge'
 import { logger } from '@utils/logger'
 import { SSHTerminal } from '@components/SSHTerminal'
 import { AITerminal } from '@components/AITerminal'
@@ -29,6 +29,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<'chat' | 'cli' | 'security'>('chat')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [aiStatus, setAiStatus] = useState<{ model: string; configured: boolean; provider: string }>({ model: '', configured: false, provider: '' })
+  const [cliAutoConnect, setCliAutoConnect] = useState(false)
 
   const layoutRef = useRef<HTMLDivElement>(null)
   const isDraggingRef = useRef(false)
@@ -43,6 +44,18 @@ function App() {
         setConfig(loaded.status === 'fulfilled' ? loaded.value : DEFAULT_CONFIG)
         setAppVersion(versionResult.status === 'fulfilled' ? versionResult.value.version : '')
         logger.info('App initialized', { source: loaded.status === 'fulfilled' ? 'ipc' : 'default' })
+
+        // CLI 인자로 전달된 접속 정보 확인 (HiWare/PuTTY 호환)
+        try {
+          const cliConn = await cliBridge.getConnection()
+          if (cliConn) {
+            setSshConnection({ host: cliConn.host, port: cliConn.port, username: cliConn.username })
+            setCliAutoConnect(true)
+            logger.info('CLI auto-connect mode', { host: cliConn.host, port: cliConn.port })
+          }
+        } catch {
+          // CLI 접속 정보 없음 → 일반 GUI 모드
+        }
       } catch (error) {
         logger.error('Failed to initialize app', { error })
         setConfig(DEFAULT_CONFIG)
@@ -117,6 +130,7 @@ function App() {
         <div className="terminal-panel ssh-panel" style={{ width: `${splitRatio}%` }}>
           <SSHTerminal
             connection={sshConnection}
+            cliAutoConnect={cliAutoConnect}
             onRequestConnect={handleSshConnect}
             onConnect={handleConnected}
             onDisconnect={handleDisconnected}

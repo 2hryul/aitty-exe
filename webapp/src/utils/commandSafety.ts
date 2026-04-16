@@ -28,8 +28,8 @@ const DANGER_PATTERNS: DangerPattern[] = [
   // 리다이렉트 — 블록 디바이스 직접 쓰기
   { pattern: />\s*\/dev\/sd[a-z]/, reason: '블록 디바이스에 직접 리다이렉션', alternative: '> output.txt (파일로 리다이렉션)' },
 
-  // 프로세스 — Fork Bomb
-  { pattern: /:\(\)\s*\{.*:\|:.*\}/, reason: 'Fork Bomb — 시스템 마비', alternative: 'ulimit -u 100 (프로세스 수 제한)' },
+  // 프로세스 — Fork Bomb (`:(){ :|:& };:` 변형 포함)
+  { pattern: /:\(\)\s*\{[^}]*:\s*\|\s*:/, reason: 'Fork Bomb — 시스템 마비', alternative: 'ulimit -u 100 (프로세스 수 제한)' },
 
   // 권한 — 루트 전체 대상
   { pattern: /\bchmod\s+777\s+(-[a-zA-Z]*R|-[a-zA-Z]*R[a-zA-Z]*)\s+\/\s*$/, reason: '전체 파일 권한 777 개방', alternative: 'chmod 755 /specific/dir' },
@@ -37,9 +37,13 @@ const DANGER_PATTERNS: DangerPattern[] = [
   { pattern: /\bchown\s+(-[a-zA-Z]*R|-[a-zA-Z]*R[a-zA-Z]*)\s+\w+\s+\/\s*$/, reason: '루트 전체 소유자 변경', alternative: 'chown -R user /home/user' },
   { pattern: /\bchown\s+\w+\s+(-[a-zA-Z]*R|-[a-zA-Z]*R[a-zA-Z]*)\s+\/\s*$/, reason: '루트 전체 소유자 변경', alternative: 'chown -R user /home/user' },
 
+  // 루트 보호 비활성화 삭제
+  { pattern: /\brm\s+.*--no-preserve-root/, reason: '루트 보호 비활성화 삭제 (--no-preserve-root)', alternative: 'rm -ri ./target' },
+
   // 시스템 종료/재시작 — SSH 원격 연결 영구 차단
-  { pattern: /\b(shutdown|poweroff|halt)\b/, reason: '시스템 종료 — SSH 원격 연결 영구 차단', alternative: '관리자에게 종료 요청 또는 systemctl suspend' },
-  { pattern: /\breboot(\s|$)/, reason: '시스템 재시작 — SSH 연결 차단 (재시작 후 수동 재접속 필요)', alternative: '관리자에게 재시작 요청' },
+  { pattern: /\b(poweroff|halt)\b/, reason: '시스템 종료 — SSH 원격 연결 영구 차단', alternative: '관리자에게 종료 요청 또는 systemctl suspend' },
+  { pattern: /\bshutdown\b(?!\s+(-c|--cancel|--help|--version))/, reason: '시스템 종료 — SSH 원격 연결 영구 차단', alternative: '관리자에게 종료 요청' },
+  { pattern: /\breboot\b(?!\s+--(help|version))/, reason: '시스템 재시작 — SSH 연결 차단 (재시작 후 수동 재접속 필요)', alternative: '관리자에게 재시작 요청' },
   { pattern: /\bsystemctl\s+(poweroff|halt|reboot)\b/, reason: 'systemctl 시스템 종료/재시작', alternative: '관리자에게 문의' },
   { pattern: /\binit\s+[06]\b/, reason: '런레벨 0(종료)/6(재시작) 전환', alternative: '관리자에게 문의' },
   { pattern: /\btelinit\s+[06]\b/, reason: '런레벨 0(종료)/6(재시작) 전환 (telinit)', alternative: '관리자에게 문의' },

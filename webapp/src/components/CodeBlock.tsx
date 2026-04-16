@@ -31,7 +31,8 @@ export default function CodeBlock({ language, code, sshConnected, onRunCommand }
     ?? code.split('\n')[0].trim()
   , [code])
 
-  const safety = useMemo(() => isShellLang ? checkCommandSafety(firstLine) : { level: 'safe' as SafetyLevel }, [firstLine, isShellLang])
+  // 전체 코드블록 검사 — 멀티라인 우회 방지 (firstLine만 검사하면 2번째 줄 위험 명령 통과)
+  const safety = useMemo(() => isShellLang ? checkCommandSafety(code) : { level: 'safe' as SafetyLevel }, [code, isShellLang])
 
   const isHardBlocked = safety.level === 'danger'
   const needsConfirm  = safety.level === 'caution'

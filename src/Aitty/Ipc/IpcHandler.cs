@@ -26,6 +26,7 @@ public class IpcHandler
     private readonly AiServiceManager _aiManager;
     private readonly SessionService _sessionService;
     private readonly SessionData? _restoredSession;
+    private readonly SshConnection? _startupConnection;
     private CancellationTokenSource? _streamingCts;
 
     public IpcHandler(
@@ -35,7 +36,8 @@ public class IpcHandler
         KeyManagerService keyManagerService,
         AiServiceManager aiManager,
         SessionService sessionService,
-        SessionData? restoredSession = null)
+        SessionData? restoredSession = null,
+        SshConnection? startupConnection = null)
     {
         _webView = webView;
         _sshService = sshService;
@@ -44,6 +46,7 @@ public class IpcHandler
         _aiManager = aiManager;
         _sessionService = sessionService;
         _restoredSession = restoredSession;
+        _startupConnection = startupConnection;
     }
 
     public void Register()
@@ -155,6 +158,10 @@ public class IpcHandler
             "session:get-restored"     => HandleSessionGetRestored(),
             "session:set-save-enabled" => HandleSessionSetSaveEnabled(msg.Payload),
 
+            // ── CLI 자동접속 (HiWare/PuTTY 호환) ──────────── //
+            "cli:get-connection"       => HandleCliGetConnection(),
+            "cli:auto-connect"         => await HandleCliAutoConnect(),
+
             "app:version"              => GetAppVersion(),
             "app:window-minimize"      => HandleWindowMinimize(),
             "app:window-maximize"      => HandleWindowMaximize(),
@@ -199,6 +206,10 @@ public class IpcHandler
         if (data.Command.Length > 8192)
             throw new ArgumentException("Command too long (max 8192 chars)");
 
+        // [M-2] 백엔드 방어 계층 — 치명적 명령 차단
+        if (CommandSafetyService.IsDangerous(data.Command))
+            throw new InvalidOperationException("Command blocked by safety policy");
+
         var sw = Stopwatch.StartNew();
         string output;
         bool success;
@@ -238,7 +249,24 @@ public class IpcHandler
         return new { isConnected = alive, isConnecting = state.IsConnecting, error = state.Error, host = state.Connection?.Host, connectionTime = state.ConnectionTime?.ToString("o") };
     }
 
-    private object HandleSshShellWrite(object? payload) { _sshService.WriteToShell(DeserializePayload<ShellWritePayload>(payload).Data); return new { success = true }; }
+    private object HandleSshShellWrite(object? payload)
+    {
+        var text = DeserializePayload<ShellWritePayload>(payload).Data;
+
+        // 백엔드 방어 계층 — 코드블록 Run 등 전체 명령이 한 번에 전송될 때 캐치
+        if (text.Contains('\n') || text.Contains('\r'))
+        {
+            var lines = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                if (CommandSafetyService.IsDangerous(line.Trim()))
+                    throw new InvalidOperationException("Command blocked by safety policy");
+            }
+        }
+
+        _sshService.WriteToShell(text);
+        return new { success = true };
+    }
     private object HandleSshShellRead() => new { data = _sshService.ReadFromShell() };
     private object HandleSshResize(object? payload) { var data = DeserializePayload<ResizePayload>(payload); _sshService.ResizeTerminal(data.Cols, data.Rows); return new { success = true }; }
 
@@ -473,6 +501,38 @@ public class IpcHandler
     {
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         return new { version = version?.ToString() ?? "0.2.0" };
+    }
+
+    // ── CLI 자동접속 (HiWare/PuTTY 호환) ──────────────────────── //
+
+    /// <summary>CLI 인자로 전달된 접속 정보 반환 (비밀번호 제외).</summary>
+    private object? HandleCliGetConnection()
+    {
+        if (_startupConnection is null) return null;
+        return new
+        {
+            host = _startupConnection.Host,
+            port = _startupConnection.Port,
+            username = _startupConnection.Username,
+            hasPassword = !string.IsNullOrEmpty(_startupConnection.Password),
+            hasPrivateKey = !string.IsNullOrEmpty(_startupConnection.PrivateKey),
+        };
+    }
+
+    /// <summary>CLI 인자의 접속 정보로 즉시 SSH 연결. 비밀번호가 IPC를 넘지 않음.</summary>
+    private async Task<object> HandleCliAutoConnect()
+    {
+        if (_startupConnection is null)
+            return new { success = false, error = "CLI 접속 정보 없음" };
+
+        var success = await _sshService.ConnectAsync(_startupConnection);
+
+        _ = SshAuditLogger.LogConnectAsync(
+            _startupConnection.Host, _startupConnection.Port,
+            _startupConnection.Username,
+            success, _sshService.State.Error);
+
+        return new { success, error = _sshService.State.Error };
     }
 
     // ── Window Control ────────────────────────────────────────── //

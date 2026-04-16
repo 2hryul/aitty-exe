@@ -98,7 +98,7 @@ public partial class MainWindow : Window
                 _aiManager.RestoreSessionData(restoredSession);
 
             // ── IPC 등록 ──────────────────────────────────────
-            _ipcHandler = new IpcHandler(webView, _sshService, _configService, _keyManagerService, _aiManager, _sessionService, restoredSession);
+            _ipcHandler = new IpcHandler(webView, _sshService, _configService, _keyManagerService, _aiManager, _sessionService, restoredSession, App.StartupConnection);
             _ipcHandler.Register();
 
             // ── 네비게이션 ────────────────────────────────────

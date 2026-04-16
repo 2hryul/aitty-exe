@@ -253,4 +253,21 @@ export const session = {
   setSaveEnabled: (enabled: boolean) => invoke<{ success: boolean; saveEnabled: boolean }>('session:set-save-enabled', { enabled }),
 }
 
+// ── CLI 자동접속 (HiWare/PuTTY 호환) ──────────────────── //
+
+export interface CliConnectionInfo {
+  host: string
+  port: number
+  username: string
+  hasPassword: boolean
+  hasPrivateKey: boolean
+}
+
+export const cli = {
+  /** CLI 인자로 전달된 접속 정보 조회. 없으면 null (일반 GUI 모드). */
+  getConnection: () => invoke<CliConnectionInfo | null>('cli:get-connection'),
+  /** CLI 접속 정보로 즉시 SSH 연결. 비밀번호는 C# 메모리에만 유지. */
+  autoConnect: () => invoke<{ success: boolean; error?: string }>('cli:auto-connect'),
+}
+
 init()

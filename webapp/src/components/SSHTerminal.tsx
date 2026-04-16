@@ -6,11 +6,13 @@ import { useSSHConnection } from '@hooks/useSSHConnection'
 import { useTerminalResize } from '@hooks/useTerminalResize'
 import { SSHConnection } from '@app-types/ssh'
 import { logger } from '@utils/logger'
-import { ssh as sshBridge, keys as keysBridge } from '@bridge/ipcBridge'
+import { checkCommandSafety, type SafetyResult } from '@utils/commandSafety'
+import { ssh as sshBridge, keys as keysBridge, cli as cliBridge } from '@bridge/ipcBridge'
 import '../styles/terminal.css'
 
 export interface SSHTerminalProps {
   connection?: SSHConnection
+  cliAutoConnect?: boolean
   onRequestConnect?: (conn: SSHConnection) => void
   onConnect?: () => void
   onDisconnect?: () => void
@@ -25,7 +27,7 @@ const DEFAULT_SSH_HOST = import.meta.env.VITE_DEFAULT_SSH_HOST || ''
 const DEFAULT_SSH_PORT = import.meta.env.VITE_DEFAULT_SSH_PORT || '22'
 const DEFAULT_SSH_USERNAME = import.meta.env.VITE_DEFAULT_SSH_USERNAME || ''
 
-export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconnect, autoConnect = false }: SSHTerminalProps) {
+export function SSHTerminal({ connection, cliAutoConnect = false, onRequestConnect, onConnect, onDisconnect, autoConnect = false }: SSHTerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -35,6 +37,12 @@ export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconn
   const acceleratePollRef = useRef<(() => void) | null>(null) // 키입력 시 폴링 가속
   const healthCheckTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isPollingRef = useRef(false)
+
+  // ── 위험 명령어 통제: 입력 버퍼 + 확인 모드 ──
+  const lineBufferRef = useRef('')
+  const pendingCommandRef = useRef('')
+  const pendingConfirmRef = useRef(false)
+  const pendingConfirmBufferRef = useRef('')
 
   const { state: sshState, connect, disconnect, shellWrite, shellRead } = useSSHConnection()
   const shellWriteRef = useRef(shellWrite)
@@ -250,12 +258,146 @@ export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconn
 
     showBanner(term)
 
-    // Forward all keystrokes to shell stream via ref (avoids stale closure)
+    // ── 위험 명령어 통제: 터미널 ANSI 경고 출력 ──
+    const writeSafetyBlock = (t: Terminal, safety: SafetyResult) => {
+      t.write('\r\n')
+      t.writeln('\x1b[31m\u{1F6D1} BLOCKED: ' + (safety.reason || 'Dangerous command') + '\x1b[0m')
+      if (safety.alternative) {
+        t.writeln('\x1b[33m\u{1F4A1} 안전한 대안: ' + safety.alternative + '\x1b[0m')
+      }
+      t.write('\r\n')
+    }
+
+    const writeSafetyCaution = (t: Terminal, safety: SafetyResult) => {
+      t.write('\r\n')
+      t.writeln('\x1b[33m\u{1F7E0} WARNING: ' + (safety.reason || 'Potentially dangerous') + '\x1b[0m')
+      t.writeln('\x1b[33m"yes" + Enter 로 실행, 다른 키로 취소\x1b[0m')
+    }
+
+    const writeSafetyWarning = (t: Terminal, safety: SafetyResult) => {
+      t.write('\r\n')
+      t.writeln('\x1b[33m\u{1F7E1} ' + (safety.reason || 'Exercise caution') + '\x1b[0m')
+    }
+
+    // ── 위험 명령어 통제: caution 확인 입력 처리 ──
+    const handleConfirmInput = (data: string, t: Terminal) => {
+      if (data === '\r') {
+        const answer = pendingConfirmBufferRef.current.trim().toLowerCase()
+        if (answer === 'yes') {
+          pendingConfirmRef.current = false
+          const cmd = pendingCommandRef.current
+          pendingCommandRef.current = ''
+          pendingConfirmBufferRef.current = ''
+          // 원본 명령 재전송
+          shellWriteRef.current(cmd + '\r').catch(() => {})
+          acceleratePollRef.current?.()
+        } else {
+          pendingConfirmRef.current = false
+          pendingCommandRef.current = ''
+          pendingConfirmBufferRef.current = ''
+          t.writeln('\r\n\x1b[32m\u2713 Cancelled.\x1b[0m')
+          shellWriteRef.current('\x03').catch(() => {})
+        }
+        return
+      }
+      if (data === '\u007f' || data === '\b') {
+        if (pendingConfirmBufferRef.current.length > 0) {
+          pendingConfirmBufferRef.current = pendingConfirmBufferRef.current.slice(0, -1)
+          t.write('\b \b')
+        }
+        return
+      }
+      if (data === '\x03') {
+        pendingConfirmRef.current = false
+        pendingCommandRef.current = ''
+        pendingConfirmBufferRef.current = ''
+        t.writeln('\r\n\x1b[32m\u2713 Cancelled.\x1b[0m')
+        shellWriteRef.current('\x03').catch(() => {})
+        return
+      }
+      if (data.length === 1 && data >= ' ') {
+        pendingConfirmBufferRef.current += data
+        t.write(data)
+      }
+    }
+
+    // Forward keystrokes with safety interception
     term.onData((data: string) => {
+      // caution 확인 모드 진입 중이면 별도 처리
+      if (pendingConfirmRef.current) {
+        handleConfirmInput(data, term)
+        return
+      }
+
+      // Enter 키: 안전 검사 실행
+      if (data === '\r') {
+        const command = lineBufferRef.current.trim()
+        lineBufferRef.current = ''
+
+        if (command.length > 0) {
+          const safety = checkCommandSafety(command)
+
+          if (safety.level === 'danger') {
+            writeSafetyBlock(term, safety)
+            shellWriteRef.current('\x03').catch(() => {})
+            return
+          }
+
+          if (safety.level === 'caution') {
+            writeSafetyCaution(term, safety)
+            pendingCommandRef.current = command
+            pendingConfirmRef.current = true
+            pendingConfirmBufferRef.current = ''
+            return
+          }
+
+          if (safety.level === 'warning') {
+            writeSafetyWarning(term, safety)
+          }
+        }
+
+        // safe 또는 warning-통과: Enter 전달
+        shellWriteRef.current(data).catch(err => {
+          logger.error('Shell write error', { error: err })
+        })
+        acceleratePollRef.current?.()
+        return
+      }
+
+      // 버퍼 추적: 키 종류별 처리
+      if (data === '\u007f' || data === '\b') {
+        lineBufferRef.current = lineBufferRef.current.slice(0, -1)
+      } else if (data === '\x03' || data === '\x15') {
+        // Ctrl+C, Ctrl+U: 버퍼 초기화
+        lineBufferRef.current = ''
+      } else if (data === '\x17') {
+        // Ctrl+W: 마지막 단어 삭제
+        lineBufferRef.current = lineBufferRef.current.replace(/\S+\s*$/, '')
+      } else if (data.startsWith('\x1b')) {
+        // Escape 시퀀스 (방향키, history recall 등): 버퍼 리셋
+        lineBufferRef.current = ''
+      } else if (data.length > 1) {
+        // 멀티 문자 붙여넣기: 라인 포함 시 검사
+        if (data.includes('\r') || data.includes('\n')) {
+          const fullPaste = lineBufferRef.current + data
+          const safety = checkCommandSafety(fullPaste.replace(/\r/g, '\n'))
+          if (safety.level === 'danger') {
+            writeSafetyBlock(term, safety)
+            shellWriteRef.current('\x03').catch(() => {})
+            lineBufferRef.current = ''
+            return
+          }
+        }
+        lineBufferRef.current += data.replace(/[\r\n]/g, '')
+      } else if (data >= ' ') {
+        // 일반 인쇄 가능 문자
+        lineBufferRef.current += data
+      }
+
+      // 셸에 전달
       shellWriteRef.current(data).catch(err => {
         logger.error('Shell write error', { error: err })
       })
-      // 키 입력 즉시 폴링 가속 — 유휴 백오프(200ms) → MIN(50ms) 전환
       acceleratePollRef.current?.()
     })
 
@@ -272,12 +414,22 @@ export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconn
       }
     })
 
-    // 우클릭 → 클립보드에서 붙여넣기
+    // 우클릭 → 클립보드에서 붙여넣기 (위험 명령어 검사 포함)
     const containerEl = terminalRef.current
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault()
       navigator.clipboard.readText()
-        .then(text => { if (text) shellWriteRef.current(text).catch(() => {}) })
+        .then(text => {
+          if (!text) return
+          const fullCommand = lineBufferRef.current + text
+          const safety = checkCommandSafety(fullCommand.replace(/\r/g, '\n'))
+          if (safety.level === 'danger') {
+            writeSafetyBlock(term, safety)
+            return
+          }
+          lineBufferRef.current += text.replace(/[\r\n]/g, '')
+          shellWriteRef.current(text).catch(() => {})
+        })
         .catch(() => {
           term.writeln('\r\n\x1b[33m⚠ 클립보드 권한 없음. Ctrl+V를 사용하세요.\x1b[0m')
         })
@@ -302,10 +454,53 @@ export function SSHTerminal({ connection, onRequestConnect, onConnect, onDisconn
 
   // Auto-connect when connection prop changes
   useEffect(() => {
-    if (connection && !sshState.isConnected && !sshState.isConnecting) {
+    if (connection && !cliAutoConnect && !sshState.isConnected && !sshState.isConnecting) {
       handleConnect(connection)
     }
   }, [connection]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // CLI 자동접속 (HiWare/PuTTY 호환) — 비밀번호가 IPC를 넘지 않고 C# 메모리에서 직접 사용
+  useEffect(() => {
+    if (!cliAutoConnect || sshState.isConnected || sshState.isConnecting) return
+
+    const doCliConnect = async () => {
+      try {
+        termRef.current?.writeln(`\x1b[33mConnecting to ${connection?.host}:${connection?.port}...\x1b[0m`)
+
+        const result = await cliBridge.autoConnect()
+
+        if (!result.success) {
+          throw new Error(result.error || 'CLI auto-connect failed')
+        }
+
+        termRef.current?.clear()
+        termRef.current?.writeln(`\x1b[32m✓ Connected to ${connection?.host}:${connection?.port} as ${connection?.username}\x1b[0m`)
+        termRef.current?.writeln('')
+
+        setShowConnectForm(false)
+        onConnect?.()
+        startPolling()
+        startHealthCheck(showBanner)
+        setTimeout(() => termRef.current?.focus(), 50)
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Connection failed'
+        termRef.current?.writeln(`\x1b[31mCLI auto-connect failed: ${msg}\x1b[0m`)
+        termRef.current?.writeln('\x1b[33mFalling back to manual connection form.\x1b[0m')
+        // 폼에 CLI 접속 정보 사전입력
+        if (connection) {
+          setFormData(prev => ({
+            ...prev,
+            host: connection.host,
+            port: String(connection.port),
+            username: connection.username,
+          }))
+        }
+        setShowConnectForm(true)
+      }
+    }
+
+    doCliConnect()
+  }, [cliAutoConnect]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleConnect = async (conn?: SSHConnection) => {
     const target = conn || {
