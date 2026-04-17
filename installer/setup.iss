@@ -1,14 +1,16 @@
 ; =============================================================================
-;  Aitty SSH Terminal - Inno Setup Script v0.2.8
+;  Aitty SSH Terminal - Inno Setup Script v0.2.9
 ;  Compile: ISCC.exe setup.iss
 ;
-;  변경사항 (v0.2.8):
-;    - PuTTY 호환 CLI 자동접속 (HiWare 연동)
-;    - 위험명령어 통제점 백엔드 방어 계층 추가
+;  변경사항 (v0.2.9):
+;    - Log 탭 신설: SSH 로그 파일/명령 수집 → AI 분석
+;    - 프로바이더별 컨텍스트 예산 자동 검증 + 분할 분석 모달
+;    - 위험명령어 프론트 경로 검증 + 에러 메시지 sanitize
+;    - IPC 취소 신호가 로그 분석 루프에 전파
 ; =============================================================================
 
 #define AppName      "Aitty SSH Terminal"
-#define AppVersion   "0.2.8"
+#define AppVersion   "0.2.9"
 #define AppPublisher "Shinhan DS AX"
 #define AppExeName   "Aitty.exe"
 #define AppId        "{{8A3F2E1B-4C5D-4E6F-9A0B-1C2D3E4F5A6B}"
