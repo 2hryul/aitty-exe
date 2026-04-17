@@ -9,11 +9,13 @@ import { logger } from '@utils/logger'
 import { SettingsDrawer } from '@components/SettingsDrawer'
 import ChatPanel from '@components/ChatPanel'
 import SecurityPanel from '@components/SecurityPanel'
+import { LogTab } from '@components/LogTab'
 import '@styles/chat.css'
+import '@styles/log-tab.css'
 
 interface AITerminalProps {
   sshConnected?: boolean
-  activeTab: 'chat' | 'cli' | 'security'
+  activeTab: 'chat' | 'cli' | 'security' | 'log'
   isSettingsOpen: boolean
   onCloseSettings: () => void
   onStatusChange?: (status: { model: string; configured: boolean; provider: string }) => void
@@ -293,6 +295,15 @@ export function AITerminal({ sshConnected, activeTab, isSettingsOpen, onCloseSet
         {/* Security Tab */}
         <div className={`tab-pane ${activeTab !== 'security' ? 'hidden' : ''}`}>
           <SecurityPanel sshConnected={sshConnected} />
+        </div>
+
+        {/* Log Tab */}
+        <div className={`tab-pane ${activeTab !== 'log' ? 'hidden' : ''}`}>
+          <LogTab
+            provider={activeProvider}
+            model={currentModel}
+            availableModels={availableModels}
+          />
         </div>
       </div>
 

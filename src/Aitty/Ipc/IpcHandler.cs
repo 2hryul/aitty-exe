@@ -25,9 +25,15 @@ public class IpcHandler
     private readonly KeyManagerService _keyManagerService;
     private readonly AiServiceManager _aiManager;
     private readonly SessionService _sessionService;
+    private readonly LogCollectorService _logCollector;
     private readonly SessionData? _restoredSession;
     private readonly SshConnection? _startupConnection;
     private CancellationTokenSource? _streamingCts;
+
+    // 로그 분석 전용 시스템 프롬프트 — HandleLogsAnalyze* 에서 임시 적용 후 복구
+    private const string LogAnalyzeSystem = @"당신은 Linux 서버 로그 분석 전문가입니다. 아래 로그에서
+(1) 오류/경고 패턴 (2) 시간순 이상 징후 (3) 가능한 원인 (4) 추가 확인 명령
+을 한국어로 간결히 제시하세요.";
 
     public IpcHandler(
         WebView2 webView,
@@ -45,6 +51,7 @@ public class IpcHandler
         _keyManagerService = keyManagerService;
         _aiManager = aiManager;
         _sessionService = sessionService;
+        _logCollector = new LogCollectorService(sshService);
         _restoredSession = restoredSession;
         _startupConnection = startupConnection;
     }
@@ -154,6 +161,14 @@ public class IpcHandler
             "security:deploy"          => await HandleSecurityDeploy(msg.Payload),
             "security:run"             => await HandleSecurityRun(msg),
 
+            // ── 로그 수집 · AI 분석 ─────────────────────────────── //
+            "logs:stat-file"           => await HandleLogsStatFile(msg.Payload),
+            "logs:fetch-file"          => await HandleLogsFetchFile(msg.Payload),
+            "logs:fetch-exec"          => await HandleLogsFetchExec(msg.Payload),
+            "logs:evaluate"            => HandleLogsEvaluate(msg.Payload),
+            "logs:analyze"             => await HandleLogsAnalyze(msg),
+            "logs:analyze-chunked"     => await HandleLogsAnalyzeChunked(msg),
+
             // ── 세션 ─────────────────────────────────────────── //
             "session:get-restored"     => HandleSessionGetRestored(),
             "session:set-save-enabled" => HandleSessionSetSaveEnabled(msg.Payload),
@@ -201,6 +216,10 @@ public class IpcHandler
     private async Task<object> HandleSshExec(object? payload)
     {
         var data = DeserializePayload<CommandPayload>(payload);
+
+        // [M-0] 빈 명령 가드 — NRE 대신 사용자 친화 에러로 전환
+        if (string.IsNullOrWhiteSpace(data.Command))
+            throw new ArgumentException("Command is empty");
 
         // [M-1] 커맨드 길이 제한 (8KB)
         if (data.Command.Length > 8192)
@@ -742,6 +761,227 @@ public class IpcHandler
         };
     }
 
+    // ── 로그 수집 · AI 분석 ────────────────────────────────── //
+
+    private async Task<object> HandleLogsStatFile(object? payload)
+    {
+        var data = DeserializePayload<LogPathPayload>(payload);
+        var info = await _logCollector.StatFileAsync(data.Path);
+        return new
+        {
+            exists       = info.Exists,
+            size         = info.Size,
+            lastWriteUtc = info.LastWriteUtc.ToString("o")
+        };
+    }
+
+    private async Task<object> HandleLogsFetchFile(object? payload)
+    {
+        var data = DeserializePayload<LogFetchFilePayload>(payload);
+        var result = await _logCollector.FetchFileAsync(data.Path, data.TailBytes, data.FullFile);
+
+        // 감사 로그 (fire-and-forget)
+        _ = SshAuditLogger.LogFetchAsync(result.Source, result.SizeBytes);
+
+        return ToWireLogPayload(result);
+    }
+
+    private async Task<object> HandleLogsFetchExec(object? payload)
+    {
+        var data = DeserializePayload<CommandPayload>(payload);
+
+        // 빈 명령 가드 — NRE 대신 사용자 친화 에러로 전환
+        if (string.IsNullOrWhiteSpace(data.Command))
+            throw new ArgumentException("Command is empty");
+
+        // 길이 제한 — ssh:exec와 동일
+        if (data.Command.Length > 8192)
+            throw new ArgumentException("Command too long (max 8192 chars)");
+
+        var result = await _logCollector.FetchExecAsync(data.Command);
+        _ = SshAuditLogger.LogFetchAsync(result.Source, result.SizeBytes);
+
+        return ToWireLogPayload(result);
+    }
+
+    private object HandleLogsEvaluate(object? payload)
+    {
+        var data = DeserializePayload<LogEvaluatePayload>(payload);
+        var provider = string.IsNullOrWhiteSpace(data.Provider) ? _aiManager.ActiveProvider : data.Provider;
+        var model    = string.IsNullOrWhiteSpace(data.Model) ? _aiManager.Active.CurrentModel : data.Model;
+
+        var check = AiBudget.Evaluate(data.SizeBytes, provider, model);
+        return new
+        {
+            status           = check.Status,
+            budget           = check.Budget,
+            sizeBytes        = check.SizeBytes,
+            ratio            = check.Ratio,
+            suggestedChunks  = check.SuggestedChunks,
+            provider,
+            model
+        };
+    }
+
+    /// <summary>단일 로그(예산 이내)를 1회 분석 — HandleAiAnalyzeSsh 스트리밍 패턴 복제.</summary>
+    private async Task<object> HandleLogsAnalyze(IpcMessage msg)
+    {
+        var data = DeserializePayload<LogAnalyzePayload>(msg.Payload);
+        if (string.IsNullOrEmpty(data.Content))
+            return new { content = string.Empty };
+
+        // ai:stream:cancel 과 동일한 CTS를 공유 — 사용자가 Chat과 Log 분석 중 어느 쪽이든 취소 버튼 하나로 중단
+        _streamingCts?.Dispose();
+        _streamingCts = new CancellationTokenSource();
+
+        var prompt = $"{data.Source ?? "log"}:\n{data.Content}";
+
+        var response = await RunLogAnalysisAsync(msg.Id, "logs:analyze:chunk", prompt, LogAnalyzeSystem, _streamingCts.Token);
+
+        _ = SshAuditLogger.LogAnalyzeAsync(
+            _aiManager.ActiveProvider, response.Model, 1,
+            Encoding.UTF8.GetByteCount(data.Content));
+        _ = AiChatLogger.AppendAsync(_aiManager.ActiveProvider, response.Model, null, prompt, response);
+
+        return new { content = response.Content };
+    }
+
+    /// <summary>
+    /// 예산 초과 로그를 청크 단위로 연쇄 분석 후 종합 요약.
+    /// 각 청크 시작 시 logs:chunk-progress 이벤트 발송.
+    /// 이전 청크 결과의 앞 budget*0.1 바이트를 다음 시스템 프롬프트 부록으로 연결.
+    /// </summary>
+    private async Task<object> HandleLogsAnalyzeChunked(IpcMessage msg)
+    {
+        var data = DeserializePayload<LogAnalyzePayload>(msg.Payload);
+        if (string.IsNullOrEmpty(data.Content))
+            return new { content = string.Empty };
+
+        // ai:stream:cancel 과 동일한 CTS — 청크 간격에서 취소 감지 후 루프 조기 종료
+        _streamingCts?.Dispose();
+        _streamingCts = new CancellationTokenSource();
+        var ct = _streamingCts.Token;
+
+        var provider = _aiManager.ActiveProvider;
+        var model    = _aiManager.Active.CurrentModel;
+        var budget   = AiBudget.For(provider, model);
+        var chunkBytes = Math.Max(1, (int)(budget * 0.8));
+        var summaryBytes = Math.Max(1, (int)(budget * 0.1));
+
+        var chunks = AiBudget.Split(data.Content, chunkBytes).ToList();
+        var totalBytes = Encoding.UTF8.GetByteCount(data.Content);
+        var partResults = new List<string>();
+
+        foreach (var chunk in chunks)
+        {
+            // 청크 시작 전 취소 확인 — 사용자가 중단하면 누적된 부분 요약까지는 버리고 즉시 반환
+            if (ct.IsCancellationRequested)
+                return new { content = string.Join("\n---\n", partResults), chunks = partResults.Count, cancelled = true };
+            // 진행률 이벤트 (fire-and-forget)
+            var progressResponse = new IpcResponse
+            {
+                Id = msg.Id,
+                Type = "logs:chunk-progress",
+                Payload = new { index = chunk.Index, total = chunk.Total, bytes = chunk.EndByte - chunk.StartByte }
+            };
+            var progressJson = JsonSerializer.Serialize(progressResponse, JsonOptions);
+            // fire-and-forget: 진행률 이벤트는 순서보장만 Dispatcher가 하면 충분
+            _ = _webView.Dispatcher.InvokeAsync(
+                () => _webView.CoreWebView2.PostWebMessageAsJson(progressJson),
+                System.Windows.Threading.DispatcherPriority.Background);
+
+            // 이전 청크 요약 부록
+            var appendix = partResults.Count == 0
+                ? string.Empty
+                : "\n\n[이전 청크 요약]\n" + TakeBytes(string.Join("\n---\n", partResults), summaryBytes);
+
+            var system = LogAnalyzeSystem + appendix;
+            var prompt = $"{data.Source ?? "log"} [chunk {chunk.Index + 1}/{chunk.Total}, lines {chunk.StartLine}-{chunk.EndLine}]:\n{chunk.Content}";
+
+            var response = await RunLogAnalysisAsync(msg.Id, "logs:analyze:chunk", prompt, system, ct);
+            partResults.Add(response.Content);
+        }
+
+        // 종합 요약 전 마지막 취소 체크 — 청크는 다 돌았지만 취소되었으면 최종 호출 생략
+        if (ct.IsCancellationRequested)
+            return new { content = string.Join("\n---\n", partResults), chunks = partResults.Count, cancelled = true };
+
+        // 종합 요약 1회
+        var finalSystem = "지금까지 받은 청크 요약을 종합해 최종 분석을 작성하세요.";
+        var finalPrompt = "청크별 분석 결과:\n" + string.Join("\n---\n", partResults);
+        var finalResp = await RunLogAnalysisAsync(msg.Id, "logs:analyze:chunk", finalPrompt, finalSystem, ct);
+
+        _ = SshAuditLogger.LogAnalyzeAsync(provider, finalResp.Model, chunks.Count, totalBytes);
+        _ = AiChatLogger.AppendAsync(provider, finalResp.Model, null, finalPrompt, finalResp);
+
+        return new { content = finalResp.Content, chunks = chunks.Count };
+    }
+
+    /// <summary>
+    /// 로그 분석용 스트리밍 호출 — 시스템 프롬프트를 임시 주입하고 완료 후 원래 값으로 복구.
+    /// IAiService 인터페이스 변경 없이 로컬 변수로 저장/복구.
+    /// </summary>
+    private async Task<Models.AiChatResponse> RunLogAnalysisAsync(string msgId, string chunkType, string prompt, string system, CancellationToken ct = default)
+    {
+        var svc = _aiManager.Active;
+        var original = svc.SystemPrompt;
+        svc.SetSystemPrompt(system);
+
+        try
+        {
+            System.Windows.Threading.DispatcherOperation? lastOp = null;
+            var response = await svc.SendStreamingAsync(prompt, chunk =>
+            {
+                var chunkResponse = new IpcResponse { Id = msgId, Type = chunkType, Payload = new { chunk } };
+                var json = JsonSerializer.Serialize(chunkResponse, JsonOptions);
+                lastOp = _webView.Dispatcher.InvokeAsync(
+                    () => _webView.CoreWebView2.PostWebMessageAsJson(json),
+                    System.Windows.Threading.DispatcherPriority.Background);
+            }, ct);
+
+            if (lastOp is not null)
+                try { await lastOp.Task.ConfigureAwait(false); } catch { }
+
+            return response;
+        }
+        finally
+        {
+            svc.SetSystemPrompt(original);
+        }
+    }
+
+    /// <summary>UTF-8 바이트 기준으로 문자열 앞부분을 최대 maxBytes까지 잘라 반환.</summary>
+    private static string TakeBytes(string s, int maxBytes)
+    {
+        if (string.IsNullOrEmpty(s) || maxBytes <= 0) return string.Empty;
+        var bytes = Encoding.UTF8.GetBytes(s);
+        if (bytes.Length <= maxBytes) return s;
+
+        // UTF-8 멀티바이트 문자 중간에서 자르지 않도록 '\n' 기준 역방향 탐색
+        int cut = maxBytes;
+        for (int i = maxBytes - 1; i > 0; i--)
+        {
+            if (bytes[i] == (byte)'\n') { cut = i; break; }
+        }
+        // '\n'을 못 찾은 폴백: cut이 UTF-8 continuation(0x80~0xBF) 중간이면
+        // 시작 바이트까지 당겨서 깨진 문자 방지
+        while (cut > 0 && (bytes[cut] & 0xC0) == 0x80) cut--;
+        var slice = new byte[cut];
+        Buffer.BlockCopy(bytes, 0, slice, 0, cut);
+        return Encoding.UTF8.GetString(slice);
+    }
+
+    /// <summary>LogPayload를 IPC 응답용 익명 객체로 변환(Images는 미래용이므로 포함하지 않음).</summary>
+    private static object ToWireLogPayload(LogPayload p) => new
+    {
+        source      = p.Source,
+        host        = p.Host,
+        sizeBytes   = p.SizeBytes,
+        lineCount   = p.LineCount,
+        content     = p.Content,
+        collectedAt = p.CollectedAt.ToString("o")
+    };
+
     private static string ExtractAfter(string text, string marker)
     {
         var idx = text.IndexOf(marker);
@@ -807,4 +1047,24 @@ internal class SecurityRunPayload
 {
     public string Function { get; set; } = string.Empty;
     public bool   UseSudo  { get; set; } = false;
+}
+
+// ── Log Tab DTOs ───────────────────────────────────────────── //
+internal class LogPathPayload { public string Path { get; set; } = string.Empty; }
+internal class LogFetchFilePayload
+{
+    public string Path      { get; set; } = string.Empty;
+    public int    TailBytes { get; set; } = 64 * 1024;
+    public bool   FullFile  { get; set; } = false;
+}
+internal class LogEvaluatePayload
+{
+    public int    SizeBytes { get; set; }
+    public string Provider  { get; set; } = string.Empty;
+    public string Model     { get; set; } = string.Empty;
+}
+internal class LogAnalyzePayload
+{
+    public string? Source   { get; set; }
+    public string  Content  { get; set; } = string.Empty;
 }

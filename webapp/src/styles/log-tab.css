@@ -1,0 +1,503 @@
+/* ── Log Tab ─────────────────────────────────── */
+
+.log-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  overflow-y: auto;
+  background: var(--bg-1);
+  color: var(--txt-1);
+  font-size: 13px;
+}
+
+/* ── 모드 셀렉터 ─────────────────────────────── */
+.log-mode-selector {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  width: fit-content;
+}
+.log-mode-btn {
+  padding: 6px 14px;
+  background: var(--bg-2);
+  color: var(--txt-2);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+.log-mode-btn.active {
+  background: var(--accent-1);
+  color: #fff;
+}
+.log-mode-btn:not(.active):hover {
+  background: var(--bg-3);
+}
+
+/* ── 폼 ──────────────────────────────────────── */
+.log-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.log-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.log-path-input,
+.log-command-input,
+.log-question-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--bg-1);
+  color: var(--txt-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+.log-command-input,
+.log-question-input {
+  resize: vertical;
+}
+
+.log-template-select,
+.log-slider-label,
+.log-checkbox-label {
+  font-size: 12px;
+  color: var(--txt-2);
+}
+
+.log-stat-info {
+  font-size: 12px;
+  color: var(--txt-2);
+}
+.log-error-inline {
+  color: var(--danger);
+}
+.log-warning-inline {
+  color: var(--warn);
+  font-size: 12px;
+  padding: 4px 8px;
+  background: rgba(245,158,11,0.1);
+  border-radius: 4px;
+}
+
+/* ── 버튼 ──────────────────────────────────── */
+.log-btn {
+  padding: 6px 12px;
+  background: var(--bg-3);
+  color: var(--txt-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.log-btn:hover:not(:disabled) {
+  background: var(--border);
+}
+.log-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.log-btn-primary {
+  background: var(--accent-1);
+  color: #fff;
+  border-color: var(--accent-1);
+}
+.log-btn-primary:hover:not(:disabled) {
+  background: #0052a3;
+}
+.log-btn-cancel {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.log-link-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent-1);
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.log-action-row {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── 수집 결과 배너 ────────────────────────── */
+.log-collected-banner {
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.log-collected-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.log-preview {
+  margin-top: 8px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── 예산 배너 ─────────────────────────────── */
+.log-budget-banner {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.log-budget-banner-ok {
+  background: rgba(34,197,94,0.1);
+  color: var(--ok);
+  border: 1px solid rgba(34,197,94,0.3);
+}
+.log-budget-banner-warn {
+  background: rgba(245,158,11,0.1);
+  color: var(--warn);
+  border: 1px solid rgba(245,158,11,0.3);
+}
+.log-budget-banner-reject {
+  background: rgba(239,68,68,0.1);
+  color: var(--danger);
+  border: 1px solid rgba(239,68,68,0.3);
+}
+
+/* ── 에러 배너 ─────────────────────────────── */
+.log-error-banner {
+  padding: 8px 12px;
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 6px;
+  color: var(--danger);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+/* ── 질문 / 분석 ─────────────────────────── */
+.log-question-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.log-question-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── 결과 패널 ─────────────────────────────── */
+.log-result-panel {
+  flex: 1;
+  min-height: 200px;
+  padding: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-y: auto;
+}
+.log-result-content {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.log-result-codeblock {
+  background: var(--bg-3);
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
+/* ── 진행률 ─────────────────────────────────── */
+.log-progress {
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--txt-2);
+}
+.log-progress-bar {
+  margin-top: 4px;
+  height: 6px;
+  background: var(--bg-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.log-progress-bar-fill {
+  height: 100%;
+  background: var(--accent-1);
+  transition: width 0.3s ease;
+}
+
+/* ── 프리셋 드롭다운 ──────────────────────── */
+.log-preset-select {
+  position: relative;
+}
+.log-preset-toggle {
+  padding: 6px 10px;
+  background: var(--bg-3);
+  color: var(--txt-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.log-preset-toggle:hover {
+  background: var(--border);
+}
+.log-preset-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  margin-top: 4px;
+  min-width: 240px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  padding: 4px;
+}
+.log-preset-item {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.log-preset-item-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--txt-1);
+  font-size: 12px;
+  border-radius: 4px;
+}
+.log-preset-item-btn:hover {
+  background: var(--bg-2);
+}
+.log-preset-label {
+  font-weight: 600;
+}
+.log-preset-path {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  color: var(--txt-2);
+}
+.log-preset-remove {
+  width: 24px;
+  background: transparent;
+  color: var(--txt-3);
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+}
+.log-preset-remove:hover {
+  color: var(--danger);
+}
+.log-preset-add {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px;
+  background: var(--accent-1);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.log-preset-empty {
+  padding: 8px;
+  color: var(--txt-3);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ── 예산 모달 ─────────────────────────────── */
+.log-budget-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.log-budget-modal {
+  width: min(560px, 92vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+}
+.log-budget-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.log-budget-modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--txt-1);
+}
+.log-budget-modal-close {
+  background: transparent;
+  color: var(--txt-2);
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.log-budget-modal-close:hover {
+  color: var(--txt-1);
+}
+.log-budget-modal-body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--txt-1);
+  font-size: 13px;
+}
+.log-budget-summary {
+  background: var(--bg-2);
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--txt-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.log-budget-summary strong {
+  color: var(--txt-1);
+}
+.log-budget-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.log-budget-option {
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.log-budget-option h4 {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+}
+.log-budget-option p {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: var(--txt-2);
+}
+.log-budget-switch-row {
+  display: flex;
+  gap: 6px;
+}
+.log-budget-switch-row select {
+  flex: 1;
+  padding: 5px 8px;
+  background: var(--bg-1);
+  color: var(--txt-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.log-budget-btn {
+  padding: 6px 12px;
+  background: var(--bg-3);
+  color: var(--txt-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.log-budget-btn:hover:not(:disabled) {
+  background: var(--border);
+}
+.log-budget-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.log-budget-btn-primary {
+  background: var(--accent-1);
+  color: #fff;
+  border-color: var(--accent-1);
+}
+.log-budget-btn-primary:hover:not(:disabled) {
+  background: #0052a3;
+}
+.log-budget-error {
+  margin-top: 6px;
+  color: var(--danger);
+  font-size: 12px;
+}
+.log-budget-notice {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+/* 스트리밍 커서 (chat.css에 없다면 여기서 정의) */
+.log-result-content .streaming-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent-1);
+  animation: logBlink 1s infinite;
+}
+@keyframes logBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.inline-code {
+  background: var(--bg-3);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.95em;
+}

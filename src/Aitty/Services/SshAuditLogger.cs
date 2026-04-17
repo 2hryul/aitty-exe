@@ -72,6 +72,62 @@ public static class SshAuditLogger
         }
     }
 
+    /// <summary>로그 수집(파일/exec) 이벤트 기록.</summary>
+    public static async Task LogFetchAsync(
+        string source,
+        int sizeBytes,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            Directory.CreateDirectory(LogDir);
+
+            var entry = new
+            {
+                timestamp = DateTime.UtcNow.ToString("o"),
+                @event    = "logs:fetch",
+                localUser = Environment.UserName,
+                source    = MaskSensitive(source),
+                sizeBytes
+            };
+
+            var line = JsonSerializer.Serialize(entry, JsonOpts) + Environment.NewLine;
+            var path = System.IO.Path.Combine(LogDir, $"audit_{DateTime.Now:yyyyMMdd}.log");
+            await File.AppendAllTextAsync(path, line, Encoding.UTF8, ct);
+        }
+        catch { /* 로그 실패 무시 */ }
+    }
+
+    /// <summary>로그 AI 분석 이벤트 기록.</summary>
+    public static async Task LogAnalyzeAsync(
+        string provider,
+        string model,
+        int chunks,
+        int totalBytes,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            Directory.CreateDirectory(LogDir);
+
+            var entry = new
+            {
+                timestamp = DateTime.UtcNow.ToString("o"),
+                @event    = "logs:analyze",
+                localUser = Environment.UserName,
+                provider,
+                model,
+                chunks,
+                totalBytes
+            };
+
+            var line = JsonSerializer.Serialize(entry, JsonOpts) + Environment.NewLine;
+            var path = System.IO.Path.Combine(LogDir, $"audit_{DateTime.Now:yyyyMMdd}.log");
+            await File.AppendAllTextAsync(path, line, Encoding.UTF8, ct);
+        }
+        catch { /* 로그 실패 무시 */ }
+    }
+
     /// <summary>SSH 접속 이벤트 기록.</summary>
     public static async Task LogConnectAsync(
         string remoteHost,

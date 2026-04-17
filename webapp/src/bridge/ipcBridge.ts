@@ -26,11 +26,15 @@ interface PendingRequest {
 }
 
 type StreamChunkHandler = (chunk: string) => void
+type ProgressHandler = (p: { index: number; total: number; bytes: number }) => void
 
 const pending = new Map<string, PendingRequest>()
 const streamListeners = new Map<string, StreamChunkHandler>()
+const progressListeners = new Map<string, ProgressHandler>()
 const REQUEST_TIMEOUT = 30_000
 const STREAM_TIMEOUT = 120_000
+// 분할 분석은 최대 20분(청크 연쇄 + 종합 요약)
+const CHUNKED_TIMEOUT = 20 * 60 * 1000
 
 function isWebView2(): boolean {
   return !!window.chrome?.webview
@@ -52,12 +56,21 @@ function init() {
         return
       }
 
+      // logs:chunk-progress 는 같은 msg.id로 도착하지만 완료 이벤트가 아니므로
+      // pending 프로미스를 조기 resolve 하지 않도록 먼저 처리한다.
+      if (msg.type === 'logs:chunk-progress') {
+        const progressHandler = progressListeners.get(msg.id)
+        if (progressHandler && msg.payload) progressHandler(msg.payload)
+        return
+      }
+
       const req = pending.get(msg.id)
       if (!req) return
 
       clearTimeout(req.timer)
       pending.delete(msg.id)
       streamListeners.delete(msg.id)
+      progressListeners.delete(msg.id)
 
       if (msg.error) {
         req.reject(new Error(msg.error))
@@ -175,11 +188,39 @@ function createStreamRequest<T>(
     const timer = setTimeout(() => {
       pending.delete(id)
       streamListeners.delete(id)
+      progressListeners.delete(id)
       reject(new Error(`IPC timeout: ${type}`))
     }, STREAM_TIMEOUT)
 
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer })
     if (onChunk) streamListeners.set(id, onChunk)
+    window.chrome!.webview!.postMessage({ id, type, payload })
+  })
+}
+
+// 분할 분석 전용 — progress listener 맵 관리 + 훨씬 긴 타임아웃
+function createChunkedRequest<T>(
+  type: string,
+  payload: Record<string, unknown>,
+  onChunk?: StreamChunkHandler,
+  onProgress?: ProgressHandler,
+): Promise<T> {
+  if (!isWebView2()) {
+    return Promise.reject(new Error('WebView2 not available, running in browser mode'))
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const id = crypto.randomUUID()
+    const timer = setTimeout(() => {
+      pending.delete(id)
+      streamListeners.delete(id)
+      progressListeners.delete(id)
+      reject(new Error(`IPC timeout: ${type}`))
+    }, CHUNKED_TIMEOUT)
+
+    pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer })
+    if (onChunk) streamListeners.set(id, onChunk)
+    if (onProgress) progressListeners.set(id, onProgress)
     window.chrome!.webview!.postMessage({ id, type, payload })
   })
 }
@@ -228,6 +269,70 @@ export const security = {
     reason: string
     output: string
   }>('security:run', { function: func, useSudo }),
+}
+
+// ── Log Tab — 수집 · 예산 · 분석 ─────────────────────────── //
+
+export interface LogFileInfo {
+  exists: boolean
+  size: number
+  lastWriteUtc: string | null
+}
+
+export interface LogPayload {
+  source: string
+  host: string | null
+  sizeBytes: number
+  lineCount: number
+  content: string
+  collectedAt: string
+}
+
+// 백엔드 응답은 C# PascalCase 그대로 수신 ("Ok" | "Warn" | "Reject").
+// 훅 레이어에서 소문자로 정규화.
+export interface LogBudgetCheckResponse {
+  status: 'Ok' | 'Warn' | 'Reject'
+  budget: number
+  sizeBytes: number
+  ratio: number
+  suggestedChunks: number
+}
+
+export const logs = {
+  statFile: (path: string) =>
+    invoke<LogFileInfo>('logs:stat-file', { path }),
+
+  fetchFile: (path: string, tailBytes: number, fullFile: boolean) =>
+    invoke<LogPayload>('logs:fetch-file', { path, tailBytes, fullFile }),
+
+  fetchExec: (command: string) =>
+    invoke<LogPayload>('logs:fetch-exec', { command }),
+
+  evaluate: (sizeBytes: number, provider: string, model: string) =>
+    invoke<LogBudgetCheckResponse>('logs:evaluate', { sizeBytes, provider, model }),
+
+  analyze: (payload: LogPayload, question: string, onChunk?: StreamChunkHandler) =>
+    createStreamRequest<{ content: string }>(
+      'logs:analyze',
+      { payload, question },
+      onChunk,
+    ),
+
+  analyzeChunked: (
+    payload: LogPayload,
+    question: string,
+    budget: number,
+    onChunk?: StreamChunkHandler,
+    onProgress?: ProgressHandler,
+  ) =>
+    createChunkedRequest<{ content: string; chunks?: number }>(
+      'logs:analyze-chunked',
+      { payload, question, budget },
+      onChunk,
+      onProgress,
+    ),
+
+  cancelAnalyze: () => invoke<{ success: boolean }>('ai:stream:cancel'),
 }
 
 export const app = {
