@@ -14,8 +14,15 @@ namespace Aitty.Services;
 /// </summary>
 public class GeminiService : IAiService
 {
-    private static readonly HttpClient SharedHttpClient = new() { Timeout = TimeSpan.FromMinutes(5) };
-    private readonly HttpClient _httpClient = SharedHttpClient;
+    private HttpClient _httpClient = HttpClientHelper.Create(allowInsecureSsl: false);
+
+    public void SetAllowInsecureSsl(bool allow)
+    {
+        var oldClient = _httpClient;
+        _httpClient = HttpClientHelper.Create(allow);
+        try { oldClient.Dispose(); } catch { /* ignore */ }
+    }
+
     private readonly List<AiChatMessage> _history = new();
     private readonly object _historyLock = new();
 

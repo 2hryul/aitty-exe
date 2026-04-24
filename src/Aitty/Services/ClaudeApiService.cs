@@ -30,8 +30,15 @@ public class ClaudeApiService : IAiService
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    private static readonly HttpClient SharedHttpClient = new();
-    private readonly HttpClient _httpClient = SharedHttpClient;
+    private HttpClient _httpClient = HttpClientHelper.Create(allowInsecureSsl: false, timeout: TimeSpan.FromMinutes(10));
+
+    public void SetAllowInsecureSsl(bool allow)
+    {
+        var oldClient = _httpClient;
+        _httpClient = HttpClientHelper.Create(allow, timeout: TimeSpan.FromMinutes(10));
+        try { oldClient.Dispose(); } catch { /* ignore */ }
+    }
+
     private readonly List<AiChatMessage> _conversationHistory = new();
     private readonly object _historyLock = new();
 

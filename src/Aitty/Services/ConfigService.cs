@@ -80,6 +80,18 @@ public class ConfigService
         }
     }
 
+    /// <summary>OpenAI 호환 Base URL 저장 (Shinhan Hands 등 커스텀 게이트웨이용).</summary>
+    public async Task SaveOpenAiBaseUrlAsync(string? baseUrl)
+    {
+        try
+        {
+            var config = await LoadAsync();
+            config.OpenAiBaseUrl = baseUrl;
+            await SaveAsync(config);
+        }
+        catch { /* 저장 실패가 앱 동작을 막으면 안 됨 */ }
+    }
+
     private static AppConfig CreateDefault() => new()
     {
         Theme = "dark",
@@ -107,7 +119,9 @@ public class ConfigService
             FontSize = config.FontSize,
             FontFamily = config.FontFamily,
             LastConnection = config.LastConnection,
-            SshConnections = sanitizedConnections
+            SshConnections = sanitizedConnections,
+            OpenAiBaseUrl = config.OpenAiBaseUrl,
+            AllowInsecureSsl = config.AllowInsecureSsl
         };
     }
 

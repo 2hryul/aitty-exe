@@ -40,6 +40,21 @@ public class AiServiceManager : IDisposable
     /// <summary>Ollama 전용 속성 접근 (endpoint 변경 등)</summary>
     public LocalLlmService Ollama => _ollamaService;
 
+    /// <summary>OpenAI 전용 속성 접근 (호환 게이트웨이용 Base URL 변경 등)</summary>
+    public OpenAiService OpenAi => _openAiService;
+
+    /// <summary>
+    /// SSL 검증 정책을 모든 AI 서비스(ollama/openai/claude/gemini)에 일괄 적용.
+    /// 내부망 자체서명 인증서 엔드포인트 연결 시 true로 설정.
+    /// </summary>
+    public void SetAllowInsecureSsl(bool allow)
+    {
+        _ollamaService.SetAllowInsecureSsl(allow);
+        _openAiService.SetAllowInsecureSsl(allow);
+        _claudeService.SetAllowInsecureSsl(allow);
+        _geminiService.SetAllowInsecureSsl(allow);
+    }
+
     // ── 제공자 전환 ───────────────────────────────────────── //
 
     /// <summary>제공자 전환. 지원값: "ollama" | "gemini" | "claude" | "openai"</summary>
@@ -92,13 +107,13 @@ public class AiServiceManager : IDisposable
         _ => "unknown"
     };
 
-    /// <summary>지원 제공자 목록과 상태</summary>
+    /// <summary>지원 제공자 목록과 상태. OpenAI/Ollama는 endpoint 필드 포함(UI에서 현재값 표시용).</summary>
     public object[] GetProviders() =>
     [
-        new { id = "ollama", name = "API 접속",           status = GetProviderStatus("ollama"), requiresApiKey = false },
-        new { id = "gemini", name = "Google Gemini",    status = GetProviderStatus("gemini"), requiresApiKey = true  },
-        new { id = "claude", name = "Anthropic Claude", status = GetProviderStatus("claude"), requiresApiKey = true  },
-        new { id = "openai", name = "OpenAI",           status = GetProviderStatus("openai"), requiresApiKey = true  },
+        new { id = "ollama", name = "API 접속",           status = GetProviderStatus("ollama"), requiresApiKey = false, endpoint = _ollamaService.CurrentBaseUrl },
+        new { id = "gemini", name = "Google Gemini",    status = GetProviderStatus("gemini"), requiresApiKey = true,  endpoint = (string?)null },
+        new { id = "claude", name = "Anthropic Claude", status = GetProviderStatus("claude"), requiresApiKey = true,  endpoint = (string?)null },
+        new { id = "openai", name = "OpenAI",           status = GetProviderStatus("openai"), requiresApiKey = true,  endpoint = _openAiService.CurrentBaseUrl },
     ];
 
     // ── 세션 저장/복원 ──────────────────────────────────────── //

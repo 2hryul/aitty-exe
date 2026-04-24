@@ -21,17 +21,40 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // 진단 로그 초기화 (WebView2 문제, 흰 화면 등 재현 시 사용자가 로그 전달용)
+        StartupLogger.Initialize();
+        // AI API 호출 전용 로그 — base_url 정규화, Bearer 토큰(마스킹), 요청/응답 기록
+        AiRequestLogger.Initialize();
+        StartupLogger.Log($"[App.OnStartup] args.Length={e.Args.Length}");
+        StartupLogger.Log($"[App.OnStartup] AI API 로그: {AiRequestLogger.LogPath}");
+
         if (e.Args.Length > 0)
         {
             StartupConnection = PuttyArgParser.Parse(e.Args);
 
             if (StartupConnection is not null)
-                Trace.TraceInformation(
-                    $"[App] CLI 자동접속 모드: {StartupConnection.Host}:{StartupConnection.Port} " +
-                    $"user={StartupConnection.Username}");
+            {
+                var msg = $"[App] CLI 자동접속 모드: {StartupConnection.Host}:{StartupConnection.Port} user={StartupConnection.Username}";
+                Trace.TraceInformation(msg);
+                StartupLogger.Log(msg);
+            }
             else
+            {
                 Trace.TraceWarning("[App] CLI 인자가 있으나 호스트를 파싱할 수 없음 → GUI 모드");
+                StartupLogger.Log("[App] CLI 인자 파싱 실패 → GUI 모드");
+            }
         }
+
+        // 전역 예외 처리기 → 로그 기록 후 사용자 안내
+        DispatcherUnhandledException += (s, args) =>
+        {
+            StartupLogger.LogException("DispatcherUnhandledException", args.Exception);
+        };
+        AppDomain.CurrentDomain.UnhandledException += (s, args) =>
+        {
+            if (args.ExceptionObject is Exception ex)
+                StartupLogger.LogException("AppDomain.UnhandledException", ex);
+        };
     }
 }
 

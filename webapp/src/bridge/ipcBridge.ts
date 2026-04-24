@@ -167,6 +167,8 @@ export interface OpenWebUiDiagnosis {
   isOpenWebUi: boolean
   modelsCount: number
   logs: string[]
+  /** 엔드포인트가 OpenAI 호환 게이트웨이(vLLM/Shinhan Hands 등)로 의심될 때 true. */
+  suggestOpenAiProvider?: boolean
 }
 
 export interface ApiLogSaveResult {
@@ -234,6 +236,8 @@ export const ai = {
   setModel: (model: string) => invoke<{ success: boolean; model: string }>('ai:set-model', { model }),
   setSystem: (systemPrompt: string | null) => invoke<{ success: boolean }>('ai:set-system', { systemPrompt }),
   setEndpoint: (url: string) => invoke<{ success: boolean; url: string }>('ai:set-endpoint', { url }),
+  /** SSL 인증서 검증 건너뛰기 토글 — 내부망 자체서명 인증서 엔드포인트 지원. */
+  setAllowInsecureSsl: (enabled: boolean) => invoke<{ success: boolean; enabled: boolean }>('ai:set-insecure-ssl', { enabled }),
   openWebUiDiagnose: (url?: string) => invoke<OpenWebUiDiagnosis>('ai:openwebui:diagnose', { url: url ?? '' }),
   saveApiLog: (content: string) => invoke<ApiLogSaveResult>('ai:api-log:save', { content }),
   state: () => invoke<AiState>('ai:state'),
@@ -337,6 +341,8 @@ export const logs = {
 
 export const app = {
   version: () => invoke<{ version: string }>('app:version'),
+  /** 진단 로그 폴더 열기 (ai_api.log, latest.log 등 사용자 전달용). */
+  openLogFolder: () => invoke<{ success: boolean; path?: string; error?: string }>('app:open-log-folder'),
   windowMinimize: () => invoke<{ success: boolean }>('app:window-minimize'),
   windowMaximize: () => invoke<{ success: boolean }>('app:window-maximize'),
   windowClose: () => invoke<{ success: boolean }>('app:window-close'),
@@ -356,6 +362,43 @@ export const session = {
   getRestored: () => invoke<RestoredSession | null>('session:get-restored'),
   /** 로그저장 체크박스 상태를 C# SessionService에 동기화. */
   setSaveEnabled: (enabled: boolean) => invoke<{ success: boolean; saveEnabled: boolean }>('session:set-save-enabled', { enabled }),
+}
+
+// ── AI 프리셋 (AES-256-GCM 암호화 저장) ─────────────── //
+
+export interface AiPresetInfo {
+  name: string
+  provider: string
+  baseUrl?: string | null
+  model?: string | null
+  allowInsecureSsl: boolean
+  hasApiKey: boolean
+  savedAt: string
+  lastUsedAt: string
+}
+
+export interface AiPresetLoadResult {
+  success: boolean
+  error?: string
+  name?: string
+  provider?: string
+  baseUrl?: string | null
+  model?: string | null
+  allowInsecureSsl?: boolean
+  hasApiKey?: boolean
+}
+
+export const aiPreset = {
+  /** 저장된 프리셋 목록 조회 (API 키는 반환되지 않음 — 메타데이터만). */
+  list: () => invoke<{ presets: AiPresetInfo[] }>('ai:preset:list'),
+  /** 현재 AI 설정 + 평문 API 키를 사용자 password로 AES-256-GCM 암호화하여 디스크에 저장. */
+  save: (name: string, apiKey: string, password: string) =>
+    invoke<{ success: boolean; name?: string; error?: string }>('ai:preset:save', { name, apiKey, password }),
+  /** 프리셋을 현재 세션에 적용 (provider 전환 + BaseUrl/API키/모델/SSL). password 불일치 시 세션 변경 없이 실패. */
+  load: (name: string, password: string) =>
+    invoke<AiPresetLoadResult>('ai:preset:load', { name, password }),
+  /** 프리셋 삭제. */
+  delete: (name: string) => invoke<{ success: boolean; error?: string }>('ai:preset:delete', { name }),
 }
 
 // ── CLI 자동접속 (HiWare/PuTTY 호환) ──────────────────── //

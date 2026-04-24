@@ -25,6 +25,7 @@ public class IpcHandler
     private readonly KeyManagerService _keyManagerService;
     private readonly AiServiceManager _aiManager;
     private readonly SessionService _sessionService;
+    private readonly AiPresetStore _presetStore = new();
     private readonly LogCollectorService _logCollector;
     private readonly SessionData? _restoredSession;
     private readonly SshConnection? _startupConnection;
@@ -150,6 +151,13 @@ public class IpcHandler
 
             // ── Ollama 전용 ──────────────────────────────── //
             "ai:set-endpoint"          => HandleAiSetEndpoint(msg.Payload),
+            "ai:set-insecure-ssl"      => await HandleAiSetInsecureSsl(msg.Payload),
+
+            // ── AI 프리셋 (AES-256 암호화 저장) ────────── //
+            "ai:preset:list"           => await HandleAiPresetList(),
+            "ai:preset:save"           => await HandleAiPresetSave(msg.Payload),
+            "ai:preset:load"           => await HandleAiPresetLoad(msg.Payload),
+            "ai:preset:delete"         => await HandleAiPresetDelete(msg.Payload),
             "ai:openwebui:diagnose"    => await HandleAiOpenWebUiDiagnose(msg.Payload),
 
             // ── SSH 분석 ─────────────────────────────────── //
@@ -178,6 +186,7 @@ public class IpcHandler
             "cli:auto-connect"         => await HandleCliAutoConnect(),
 
             "app:version"              => GetAppVersion(),
+            "app:open-log-folder"      => HandleOpenLogFolder(),
             "app:window-minimize"      => HandleWindowMinimize(),
             "app:window-maximize"      => HandleWindowMaximize(),
             "app:window-close"         => HandleWindowClose(),
@@ -385,7 +394,13 @@ public class IpcHandler
     {
         var svc = _aiManager.Active;
         var isConfigured = await svc.IsEngineAvailableAsync();
-        var baseUrl = svc is LocalLlmService ollama ? ollama.CurrentBaseUrl : string.Empty;
+        // OpenAI(호환 게이트웨이)도 baseUrl 반환하여 UI에서 현재 엔드포인트 표시
+        var baseUrl = svc switch
+        {
+            LocalLlmService ollama => ollama.CurrentBaseUrl,
+            OpenAiService openai => openai.CurrentBaseUrl,
+            _ => string.Empty,
+        };
         return new
         {
             isConfigured,
@@ -443,12 +458,179 @@ public class IpcHandler
         return new { success = true, provider = data.Provider, hasKey = _aiManager.HasApiKey(data.Provider) };
     }
 
-    // ── Ollama 전용 ────────────────────────────────────────── //
+    // ── Endpoint 설정 (Ollama / OpenAI 호환) ─────────────────── //
 
     private object HandleAiSetEndpoint(object? payload)
     {
-        _aiManager.Ollama.SetBaseUrl(DeserializePayload<EndpointPayload>(payload).Url);
+        var url = DeserializePayload<EndpointPayload>(payload).Url;
+        if (_aiManager.ActiveProvider == "openai")
+        {
+            _aiManager.OpenAi.SetBaseUrl(url);
+            _ = _configService.SaveOpenAiBaseUrlAsync(_aiManager.OpenAi.CurrentBaseUrl);
+            return new { success = true, url = _aiManager.OpenAi.CurrentBaseUrl };
+        }
+        _aiManager.Ollama.SetBaseUrl(url);
         return new { success = true, url = _aiManager.Ollama.CurrentBaseUrl };
+    }
+
+    /// <summary>
+    /// SSL 검증 정책 토글 — 내부망 자체서명 인증서 엔드포인트 지원.
+    /// 모든 AI 서비스(Ollama/OpenAI/Claude/Gemini)에 일괄 적용 + config.json 영속화.
+    /// </summary>
+    private async Task<object> HandleAiSetInsecureSsl(object? payload)
+    {
+        var enabled = DeserializePayload<InsecureSslPayload>(payload).Enabled;
+        _aiManager.SetAllowInsecureSsl(enabled);
+        try
+        {
+            var cfg = await _configService.LoadAsync();
+            cfg.AllowInsecureSsl = enabled;
+            await _configService.SaveAsync(cfg);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"[IpcHandler] AllowInsecureSsl 저장 실패: {ex.Message}");
+        }
+        return new { success = true, enabled };
+    }
+
+    // ── AI 프리셋 (AES-256-GCM 암호화 저장) ────────────────── //
+
+    /// <summary>저장된 프리셋 목록 반환. API 키는 복호화되지 않은 상태(UI용 메타데이터만).</summary>
+    private async Task<object> HandleAiPresetList()
+    {
+        var presets = await _presetStore.LoadAllAsync();
+        // API 키는 프론트로 전달하지 않음 — 저장 여부만 표시
+        return new
+        {
+            presets = presets.Select(p => new
+            {
+                name = p.Name,
+                provider = p.Provider,
+                baseUrl = p.BaseUrl,
+                model = p.Model,
+                allowInsecureSsl = p.AllowInsecureSsl,
+                hasApiKey = !string.IsNullOrEmpty(p.EncryptedApiKey),
+                savedAt = p.SavedAt,
+                lastUsedAt = p.LastUsedAt,
+            }).ToList()
+        };
+    }
+
+    /// <summary>
+    /// 현재 AI 설정을 프리셋으로 저장. 평문 API 키가 전달되면 AES-256-GCM 암호화 후 디스크에.
+    /// 서버에서 현재 활성 provider의 상태를 참조해 provider/baseUrl/model 채움.
+    /// </summary>
+    private async Task<object> HandleAiPresetSave(object? payload)
+    {
+        var req = DeserializePayload<PresetSavePayload>(payload);
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return new { success = false, error = "프리셋 이름이 비어있습니다." };
+        if (string.IsNullOrEmpty(req.Password) || req.Password.Length < 4)
+            return new { success = false, error = "프리셋 암호는 최소 4자 이상이어야 합니다." };
+
+        var provider = _aiManager.ActiveProvider;
+        var baseUrl  = provider switch
+        {
+            "openai" => _aiManager.OpenAi.CurrentBaseUrl,
+            "ollama" => _aiManager.Ollama.CurrentBaseUrl,
+            _ => null,
+        };
+        var model = _aiManager.Active.CurrentModel;
+        var systemPrompt = _aiManager.Active.SystemPrompt;
+
+        try
+        {
+            var cfg = await _configService.LoadAsync();
+            await _presetStore.SaveAsync(
+                name: req.Name.Trim(),
+                provider: provider,
+                baseUrl: baseUrl,
+                model: model,
+                plainApiKey: req.ApiKey ?? string.Empty,
+                password: req.Password,
+                allowInsecureSsl: cfg.AllowInsecureSsl,
+                systemPrompt: systemPrompt);
+            return new { success = true, name = req.Name.Trim() };
+        }
+        catch (Exception ex)
+        {
+            return new { success = false, error = ex.Message };
+        }
+    }
+
+    /// <summary>프리셋을 현재 세션에 적용 — provider 전환 + BaseUrl/API키/모델/SSL 일괄 설정.</summary>
+    private async Task<object> HandleAiPresetLoad(object? payload)
+    {
+        var req = DeserializePayload<PresetLoadPayload>(payload);
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return new { success = false, error = "프리셋 이름이 비어있습니다." };
+        if (string.IsNullOrEmpty(req.Password))
+            return new { success = false, error = "프리셋 암호를 입력하세요." };
+
+        var result = await _presetStore.LoadPresetAsync(req.Name.Trim(), req.Password);
+        if (result is null)
+            return new { success = false, error = "프리셋을 찾을 수 없습니다." };
+
+        var (preset, plainKey) = result.Value;
+        // 복호화 실패(null) — 세션은 건드리지 않고 암호 불일치 안내만
+        if (plainKey is null)
+            return new { success = false, error = "암호가 일치하지 않거나 프리셋 파일이 손상되었습니다." };
+
+        try
+        {
+            // SSL 검증 정책 (config에도 반영)
+            _aiManager.SetAllowInsecureSsl(preset.AllowInsecureSsl);
+            var cfg = await _configService.LoadAsync();
+            cfg.AllowInsecureSsl = preset.AllowInsecureSsl;
+
+            // Provider 전환
+            _aiManager.SwitchProvider(preset.Provider);
+
+            // Base URL 적용
+            if (preset.Provider == "openai" && !string.IsNullOrWhiteSpace(preset.BaseUrl))
+            {
+                _aiManager.OpenAi.SetBaseUrl(preset.BaseUrl);
+                cfg.OpenAiBaseUrl = _aiManager.OpenAi.CurrentBaseUrl;
+            }
+            else if (preset.Provider == "ollama" && !string.IsNullOrWhiteSpace(preset.BaseUrl))
+            {
+                _aiManager.Ollama.SetBaseUrl(preset.BaseUrl);
+            }
+            await _configService.SaveAsync(cfg);
+
+            // API 키 + 모델 + 시스템 프롬프트
+            if (!string.IsNullOrEmpty(plainKey))
+                _aiManager.SetApiKey(preset.Provider, plainKey);
+            if (!string.IsNullOrWhiteSpace(preset.Model))
+                _aiManager.Active.SetModel(preset.Model);
+            if (preset.SystemPrompt is not null)
+                _aiManager.Active.SetSystemPrompt(preset.SystemPrompt);
+
+            return new
+            {
+                success = true,
+                name = preset.Name,
+                provider = preset.Provider,
+                baseUrl = preset.BaseUrl,
+                model = preset.Model,
+                allowInsecureSsl = preset.AllowInsecureSsl,
+                hasApiKey = !string.IsNullOrEmpty(plainKey),
+            };
+        }
+        catch (Exception ex)
+        {
+            return new { success = false, error = ex.Message };
+        }
+    }
+
+    private async Task<object> HandleAiPresetDelete(object? payload)
+    {
+        var req = DeserializePayload<PresetNamePayload>(payload);
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return new { success = false, error = "프리셋 이름이 비어있습니다." };
+        await _presetStore.DeleteAsync(req.Name.Trim());
+        return new { success = true };
     }
 
     private async Task<object> HandleAiOpenWebUiDiagnose(object? payload)
@@ -520,6 +702,25 @@ public class IpcHandler
     {
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         return new { version = version?.ToString() ?? "0.2.0" };
+    }
+
+    /// <summary>진단 로그 폴더를 탐색기로 열기 (ai_api.log, latest.log 등 사용자 전달용).</summary>
+    private static object HandleOpenLogFolder()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"/select,\"{AiRequestLogger.LogPath}\"",
+                UseShellExecute = true,
+            });
+            return new { success = true, path = AiRequestLogger.LogPath };
+        }
+        catch (Exception ex)
+        {
+            return new { success = false, error = ex.Message };
+        }
     }
 
     // ── CLI 자동접속 (HiWare/PuTTY 호환) ──────────────────────── //
@@ -1036,6 +1237,10 @@ internal class KeyPathPayload      { public string Path       { get; set; } = st
 internal class ModelPayload        { public string Model      { get; set; } = string.Empty; }
 internal class SystemPromptPayload { public string? SystemPrompt { get; set; } }
 internal class EndpointPayload     { public string Url        { get; set; } = string.Empty; }
+internal class InsecureSslPayload  { public bool Enabled      { get; set; } }
+internal class PresetSavePayload   { public string Name { get; set; } = string.Empty; public string? ApiKey { get; set; } public string Password { get; set; } = string.Empty; }
+internal class PresetNamePayload   { public string Name { get; set; } = string.Empty; }
+internal class PresetLoadPayload   { public string Name { get; set; } = string.Empty; public string Password { get; set; } = string.Empty; }
 internal class ProviderPayload     { public string Provider   { get; set; } = string.Empty; }
 internal class ApiKeyPayload       { public string Provider   { get; set; } = string.Empty; public string ApiKey { get; set; } = string.Empty; }
 internal class ApiLogPayload       { public string Content    { get; set; } = string.Empty; }

@@ -15,8 +15,16 @@ namespace Aitty.Services;
 /// </summary>
 public class LocalLlmService : IAiService
 {
-    private static readonly HttpClient SharedHttpClient = new() { Timeout = TimeSpan.FromMinutes(5) };
-    private readonly HttpClient _httpClient = SharedHttpClient;
+    private HttpClient _httpClient = HttpClientHelper.Create(allowInsecureSsl: false);
+
+    /// <summary>SSL 검증 정책 변경 시 호출. 기존 HttpClient는 dispose, 새 인스턴스로 교체.</summary>
+    public void SetAllowInsecureSsl(bool allow)
+    {
+        var oldClient = _httpClient;
+        _httpClient = HttpClientHelper.Create(allow);
+        try { oldClient.Dispose(); } catch { /* ignore */ }
+    }
+
     private readonly List<AiChatMessage> _conversationHistory = new();
     private readonly object _historyLock = new();
 
@@ -39,8 +47,34 @@ public class LocalLlmService : IAiService
 
     public void SetBaseUrl(string url)
     {
-        if (!string.IsNullOrWhiteSpace(url))
-            _baseUrl = url.TrimEnd('/');
+        var before = _baseUrl;
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            _baseUrl = GetDefaultBaseUrl();
+        }
+        else
+        {
+            var trimmed = url.Trim().TrimEnd('/');
+            // 사용자가 흔히 붙여넣는 경로 접미사 자동 제거 (Ollama/OpenAI 호환 양쪽 모두)
+            string[] suffixes =
+            {
+                "/v1/chat/completions", "/v1/completions", "/v1/models", "/v1",
+                "/api/generate", "/api/chat", "/api/tags", "/api/version",
+                "/api/show", "/api/models",
+            };
+            foreach (var suf in suffixes)
+            {
+                if (trimmed.EndsWith(suf, StringComparison.OrdinalIgnoreCase))
+                {
+                    trimmed = trimmed[..^suf.Length].TrimEnd('/');
+                    break;
+                }
+            }
+            _baseUrl = string.IsNullOrWhiteSpace(trimmed) ? GetDefaultBaseUrl() : trimmed;
+        }
+        AiRequestLogger.LogSetting("ollama", "BaseUrl", $"input={url} normalized={_baseUrl}");
+        if (before != _baseUrl)
+            AiRequestLogger.LogInfo($"[Ollama] Base URL changed: {before} → {_baseUrl}");
     }
 
     public void SetApiKey(string apiKey)
@@ -65,14 +99,18 @@ public class LocalLlmService : IAiService
 
     public async Task<List<string>> ListModelsAsync(CancellationToken ct = default)
     {
+        var sw = Stopwatch.StartNew();
         using var req = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/api/tags");
         AddAuthHeader(req);
+        AiRequestLogger.LogRequest(req, note: "Ollama 모델 목록 조회 GET /api/tags");
         using var response = await _httpClient.SendAsync(req, ct);
+        var bodyText = await response.Content.ReadAsStringAsync(ct);
+        sw.Stop();
+        AiRequestLogger.LogResponse(response, bodyText, sw.ElapsedMilliseconds);
         response.EnsureSuccessStatusCode();
 
-        using var stream = await response.Content.ReadAsStreamAsync(ct);
         JsonDocument doc;
-        try { doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct); }
+        try { doc = JsonDocument.Parse(bodyText); }
         catch (JsonException) { return new List<string>(); }
         using var _ = doc;
 
@@ -415,7 +453,31 @@ public class LocalLlmService : IAiService
         await ProbePostJson("/api/show", showBody);
 
         var success = okCount > 0;
-        Log($"summary: success={success}, okCount={okCount}, modelsCount={modelsCount}, isOpenWebUi={isOpenWebUi}");
+        // 엔드포인트가 OpenAI 호환 게이트웨이(vLLM, Shinhan Hands 등)로 의심되는 패턴 감지
+        bool suggestOpenAi = false;
+        if (!success)
+        {
+            var allLogs = string.Join("\n", logs);
+            suggestOpenAi =
+                allLogs.Contains("istio-envoy", StringComparison.OrdinalIgnoreCase) ||
+                allLogs.Contains("x-envoy-upstream-service-time", StringComparison.OrdinalIgnoreCase) ||
+                allLogs.Contains("Cruz-Engine", StringComparison.OrdinalIgnoreCase) ||
+                allLogs.Contains("미등록 API", StringComparison.OrdinalIgnoreCase) ||
+                allLogs.Contains("Router Info", StringComparison.OrdinalIgnoreCase) ||
+                // vLLM 일반적 응답 패턴
+                allLogs.Contains("chat/completions", StringComparison.OrdinalIgnoreCase);
+            if (suggestOpenAi)
+            {
+                Log("⚠ 엔드포인트 응답 패턴이 OpenAI 호환 게이트웨이(vLLM/Shinhan Hands 등)로 보입니다.");
+                Log("→ Provider를 'OpenAI'로 전환하고 Base URL을 다시 입력하세요.");
+            }
+        }
+        Log($"summary: success={success}, okCount={okCount}, modelsCount={modelsCount}, isOpenWebUi={isOpenWebUi}, suggestOpenAi={suggestOpenAi}");
+
+        // ai_api.log 파일에도 전체 진단 로그 덤프 (사용자 전달용)
+        AiRequestLogger.LogInfo($"[Ollama Diagnose] baseUrl={baseUrl} success={success} okCount={okCount} modelsCount={modelsCount} isOpenWebUi={isOpenWebUi}");
+        foreach (var line in logs)
+            AiRequestLogger.LogInfo("  " + line);
 
         return new OpenWebUiDiagnosisResult
         {
@@ -423,7 +485,8 @@ public class LocalLlmService : IAiService
             BaseUrl = baseUrl,
             IsOpenWebUi = isOpenWebUi,
             ModelsCount = modelsCount,
-            Logs = logs
+            Logs = logs,
+            SuggestOpenAiProvider = suggestOpenAi
         };
     }
 
@@ -465,4 +528,9 @@ public class OpenWebUiDiagnosisResult
     public bool IsOpenWebUi { get; set; }
     public int ModelsCount { get; set; }
     public List<string> Logs { get; set; } = new();
+    /// <summary>
+    /// 엔드포인트가 Ollama가 아닌 OpenAI 호환 게이트웨이(vLLM, Shinhan Hands 등)로 의심될 때 true.
+    /// UI에서 "Provider를 OpenAI로 바꾸세요" 배너 표시용.
+    /// </summary>
+    public bool SuggestOpenAiProvider { get; set; }
 }

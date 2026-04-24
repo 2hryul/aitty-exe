@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Terminal } from 'xterm'
-import { ai, session, type AiProvider } from '@bridge/ipcBridge'
+import { ai, session, aiPreset, type AiProvider, type AiPresetInfo } from '@bridge/ipcBridge'
 import type { ChatMessage } from '@app-types/chat'
+import { logger } from '@utils/logger'
 
 export const DEFAULT_MODEL = 'qwen2.5-coder:7b'
 export const DEFAULT_SYSTEM_PROMPT = 'You are a local Linux SSH assistant. Analyze terminal output, explain issues, and suggest safe next commands. Prefer minimal-risk commands first.'
@@ -89,11 +90,14 @@ export interface UseAITerminalReturn {
   statusMessage: string
   isBusy: boolean
   isDirty: boolean
-  isApplySuccess: boolean
+  /** null = 미시도, true = 성공, false = 실패 */
+  isApplySuccess: boolean | null
   activeProvider: string
   apiKey: string
   providers: AiProvider[]
   saveApiLog: boolean
+  allowInsecureSsl: boolean
+  presets: AiPresetInfo[]
 
   // setters
   setIsSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>
@@ -101,8 +105,9 @@ export interface UseAITerminalReturn {
   setSystemPrompt: React.Dispatch<React.SetStateAction<string>>
   setApiKey: React.Dispatch<React.SetStateAction<string>>
   setSaveApiLog: React.Dispatch<React.SetStateAction<boolean>>
+  setAllowInsecureSsl: React.Dispatch<React.SetStateAction<boolean>>
   setIsDirty: React.Dispatch<React.SetStateAction<boolean>>
-  setIsApplySuccess: React.Dispatch<React.SetStateAction<boolean>>
+  setIsApplySuccess: React.Dispatch<React.SetStateAction<boolean | null>>
 
   // handlers
   writePrompt: () => void
@@ -112,6 +117,9 @@ export interface UseAITerminalReturn {
   handleModelChange: (newModel: string) => Promise<void>
   handleCheck: () => Promise<void>
   handleApplySettings: () => Promise<void>
+  handleSavePreset: (name: string) => Promise<boolean>
+  handleLoadPreset: (name: string) => Promise<boolean>
+  handleDeletePreset: (name: string) => Promise<boolean>
   handleAnalyzeClick: () => Promise<void>
   handleCancel: () => Promise<void>
   handleClear: () => void
@@ -142,6 +150,9 @@ export function useAITerminal(): UseAITerminalReturn {
 
   const [isConfigured, setIsConfigured] = useState(false)
   const [currentModel, setCurrentModel] = useState(DEFAULT_MODEL)
+  // sendMessage의 []-deps useCallback에서 stale closure 방지용 ref
+  const currentModelRef = useRef(currentModel)
+  useEffect(() => { currentModelRef.current = currentModel }, [currentModel])
   const [isStreaming, setIsStreaming] = useState(false)
   const [engineName, setEngineName] = useState('ollama')
   const [availableModels, setAvailableModels] = useState<string[]>([])
@@ -152,7 +163,7 @@ export function useAITerminal(): UseAITerminalReturn {
   const [statusMessage, setStatusMessage] = useState('Not checked')
   const [isBusy, setIsBusy] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
-  const [isApplySuccess, setIsApplySuccess] = useState(false)
+  const [isApplySuccess, setIsApplySuccess] = useState<boolean | null>(null)
 
   const [activeProvider, setActiveProvider] = useState<string>('ollama')
   const [apiKey, setApiKey] = useState('')
@@ -171,6 +182,15 @@ export function useAITerminal(): UseAITerminalReturn {
     }
   })
 
+  // SSL 검증 건너뛰기 — 내부망 자체서명 인증서 엔드포인트 지원 (기본 false)
+  const [allowInsecureSsl, setAllowInsecureSsl] = useState<boolean>(() => {
+    try { return localStorage.getItem('aitty.allowInsecureSsl') === '1' }
+    catch { return false }
+  })
+
+  // AI 프리셋 목록 — 접속 성공한 설정을 AES-256-GCM 암호화로 영속화
+  const [presets, setPresets] = useState<AiPresetInfo[]>([])
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
 
   const providersRef = useRef<AiProvider[]>([])
@@ -182,9 +202,19 @@ export function useAITerminal(): UseAITerminalReturn {
       session.setSaveEnabled(saveApiLog).catch(() => { /* non-critical */ })
     }
   }, [saveApiLog])
+
+  // SSL 검증 정책 변경 → localStorage + C# 백엔드에 즉시 반영
   useEffect(() => {
+    try { localStorage.setItem('aitty.allowInsecureSsl', allowInsecureSsl ? '1' : '0') } catch { /* ignore */ }
+    if (isWebView2()) {
+      ai.setAllowInsecureSsl(allowInsecureSsl).catch(() => { /* non-critical */ })
+    }
+  }, [allowInsecureSsl])
+  useEffect(() => {
+    // localStorage는 Ollama 전용 — OpenAI Base URL은 C# config.json에 영속화되므로 여기서 덮어쓰지 않음
+    if (activeProvider !== 'ollama') return
     try { localStorage.setItem('aitty.endpointUrl', endpointUrl) } catch { /* ignore */ }
-  }, [endpointUrl])
+  }, [endpointUrl, activeProvider])
 
   const writePrompt = useCallback(() => {
     termRef.current?.write('\r\n\x1b[36mlocal\x1b[0m@\x1b[33maitty\x1b[0m:\x1b[32m~\x1b[0m$ ')
@@ -255,11 +285,28 @@ export function useAITerminal(): UseAITerminalReturn {
     setActiveProvider(provider)
     setApiKey('')
     setIsDirty(true)
-    setIsApplySuccess(false)
+    setIsApplySuccess(null)           // ← Step 5와 연계: 성공/실패/중립 3상태
+    setStatusMessage('Not checked')   // ← 이전 프로바이더 상태 잔존 방지
+    setAvailableModels([])            // ← 이전 프로바이더 모델 목록 제거
+    setIsConfigured(false)            // ← 상태 리셋
     if (!isWebView2()) return
     try {
       await ai.setProvider(provider)
       await loadEngineState(false)
+      // Provider별 endpoint 동기화: OpenAI/Ollama는 각자의 저장된 Base URL로, 그 외는 변경 없음
+      if (provider === 'openai') {
+        const openaiInfo = providersRef.current.find(p => p.id === 'openai')
+        if (openaiInfo?.endpoint) {
+          endpointUrlRef.current = openaiInfo.endpoint
+          setEndpointUrl(openaiInfo.endpoint)
+        }
+      } else if (provider === 'ollama') {
+        const ollamaInfo = providersRef.current.find(p => p.id === 'ollama')
+        const saved = ollamaInfo?.endpoint
+          || (() => { try { return localStorage.getItem('aitty.endpointUrl') || DEFAULT_ENDPOINT } catch { return DEFAULT_ENDPOINT } })()
+        endpointUrlRef.current = saved
+        setEndpointUrl(saved)
+      }
       writeLine(`\x1b[32mProvider: ${provider}\x1b[0m`)
     } catch (error) {
       writeLine(`\x1b[31mProvider 전환 실패: ${error instanceof Error ? error.message : 'Unknown error'}\x1b[0m`)
@@ -315,6 +362,11 @@ export function useAITerminal(): UseAITerminalReturn {
           await ai.setApiKey(activeProvider, apiKey.trim())
           ok('API Key 적용 완료')
         }
+        // OpenAI는 호환 게이트웨이(Shinhan Hands 등) Base URL도 적용
+        if (activeProvider === 'openai' && endpoint.trim()) {
+          await ai.setEndpoint(endpoint.trim())
+          ok(`OpenAI Base URL 적용: ${endpoint.trim()}`)
+        }
       } else {
         step(2, totalSteps, `Ollama Endpoint 적용: ${endpoint}`)
         await ai.setEndpoint(endpoint)
@@ -339,6 +391,16 @@ export function useAITerminal(): UseAITerminalReturn {
       }
       ok(`diagnosis: success=${diag.success}, isOpenWebUi=${diag.isOpenWebUi}, models=${diag.modelsCount}`)
       diag.logs.forEach((line) => log(`\x1b[2;37m   ${line}\x1b[0m`, `   ${line}`))
+      if (diag.suggestOpenAiProvider) {
+        // OpenAI 호환 게이트웨이 감지 → 사용자에게 명확히 안내
+        writeLine('\x1b[33m┌─────────────────────────────────────────────────────────────┐\x1b[0m')
+        writeLine('\x1b[33m│ ⚠ 이 엔드포인트는 OpenAI 호환 게이트웨이(vLLM/Shinhan Hands 등)│\x1b[0m')
+        writeLine('\x1b[33m│   로 보입니다. Provider를 "OpenAI"로 전환하세요.              │\x1b[0m')
+        writeLine('\x1b[33m│   1) AI 설정 → Provider: OpenAI 선택                          │\x1b[0m')
+        writeLine('\x1b[33m│   2) Engine Endpoint에 동일 URL 입력 (/v1 자동 제거됨)        │\x1b[0m')
+        writeLine('\x1b[33m│   3) API Key + Model 입력 → Apply                             │\x1b[0m')
+        writeLine('\x1b[33m└─────────────────────────────────────────────────────────────┘\x1b[0m')
+      }
     }
 
     step(stepNo++, totalSteps, '엔진 상태 조회 (ai.state)')
@@ -453,6 +515,8 @@ export function useAITerminal(): UseAITerminalReturn {
         writeLine('\x1b[32m✓ 연결되었습니다\x1b[0m')
         setIsDirty(false)
         setIsApplySuccess(true)
+        // 헬스체크가 backoff/중단된 상태라면 즉시 재시작
+        healthCheckRestartRef.current?.()
       } else {
         writeLine('\x1b[31m✗ 연결 실패 - 설정을 확인하세요\x1b[0m')
         setIsApplySuccess(false)
@@ -466,6 +530,86 @@ export function useAITerminal(): UseAITerminalReturn {
       writePrompt()
     }
   }, [activeProvider, apiKey, currentModel, providers, runDetailedConnectionTrace, systemPrompt, writeLine, writePrompt])
+
+  // ── AI 프리셋 (AES-256-GCM 암호화 저장/불러오기) ─────────────────── //
+
+  const refreshPresets = useCallback(async () => {
+    if (!isWebView2()) return
+    try {
+      const result = await aiPreset.list()
+      setPresets(result.presets ?? [])
+    } catch (error) {
+      logger.error('[Preset] 목록 조회 실패', { error })
+    }
+  }, [])
+
+  const handleSavePreset = useCallback(async (name: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    if (!name?.trim()) {
+      writeLine('\x1b[31m프리셋 이름이 비어있습니다.\x1b[0m')
+      return { success: false, error: '프리셋 이름이 비어있습니다.' }
+    }
+    if (!isWebView2()) return { success: false, error: 'WebView2 환경에서만 사용 가능합니다.' }
+    try {
+      const result = await aiPreset.save(name.trim(), apiKey, password)
+      if (result.success) {
+        writeLine(`\x1b[32m✓ 프리셋 '${name.trim()}' 저장됨 (AES-256-GCM, 사용자 암호 기반)\x1b[0m`)
+        await refreshPresets()
+        return { success: true }
+      }
+      writeLine(`\x1b[31m프리셋 저장 실패: ${result.error ?? 'unknown'}\x1b[0m`)
+      return { success: false, error: result.error ?? 'unknown' }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      writeLine(`\x1b[31m프리셋 저장 오류: ${msg}\x1b[0m`)
+      return { success: false, error: msg }
+    }
+  }, [apiKey, refreshPresets, writeLine])
+
+  const handleLoadPreset = useCallback(async (name: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    if (!name?.trim() || !isWebView2()) return { success: false, error: '프리셋 이름이 비어있습니다.' }
+    try {
+      const result = await aiPreset.load(name.trim(), password)
+      if (!result.success) {
+        writeLine(`\x1b[31m프리셋 로드 실패: ${result.error ?? 'unknown'}\x1b[0m`)
+        return { success: false, error: result.error ?? 'unknown' }
+      }
+      writeLine(`\x1b[32m✓ 프리셋 '${result.name}' 로드됨\x1b[0m`)
+      writeLine(`\x1b[2;37m   provider=${result.provider} baseUrl=${result.baseUrl ?? '(n/a)'} model=${result.model ?? '(n/a)'}\x1b[0m`)
+      // UI 상태 동기화
+      if (result.provider) setActiveProvider(result.provider)
+      if (result.baseUrl != null) {
+        endpointUrlRef.current = result.baseUrl
+        setEndpointUrl(result.baseUrl)
+      }
+      if (result.model != null) setCurrentModel(result.model)
+      if (result.allowInsecureSsl != null) setAllowInsecureSsl(result.allowInsecureSsl)
+      setApiKey('') // 평문 키는 UI에 노출하지 않음 (백엔드에만 저장됨)
+      setIsDirty(false)
+      setIsApplySuccess(true)
+      healthCheckRestartRef.current?.()
+      await refreshPresets()
+      // 엔진 상태 새로고침
+      await loadEngineState(false)
+      return { success: true }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      writeLine(`\x1b[31m프리셋 로드 오류: ${msg}\x1b[0m`)
+      return { success: false, error: msg }
+    }
+  }, [loadEngineState, refreshPresets, writeLine])
+
+  const handleDeletePreset = useCallback(async (name: string) => {
+    if (!name?.trim() || !isWebView2()) return false
+    try {
+      const result = await aiPreset.delete(name.trim())
+      if (result.success) {
+        writeLine(`\x1b[33m프리셋 '${name.trim()}' 삭제됨\x1b[0m`)
+        await refreshPresets()
+        return true
+      }
+      return false
+    } catch { return false }
+  }, [refreshPresets, writeLine])
 
   const handleAnalyzeClick = useCallback(async () => {
     const term = termRef.current
@@ -682,6 +826,23 @@ export function useAITerminal(): UseAITerminalReturn {
       if (!response.content.trim()) {
         term.writeln('\x1b[33mNo content returned.\x1b[0m')
       }
+      // 모델 자동 교정 감지: 백엔드가 API 키 제한으로 모델을 자동 변경한 경우 UI 동기화
+      try {
+        const state = await ai.state()
+        const prevModel = currentModelRef.current
+        if (state.model && state.model !== prevModel) {
+          term.writeln('')
+          term.writeln(`\x1b[33m🔧 모델 자동 교정: '${prevModel}' → '${state.model}'\x1b[0m`)
+          term.writeln(`\x1b[2;37m   (API 키가 이 모델만 허용하므로 자동으로 교체되었습니다)\x1b[0m`)
+          setCurrentModel(state.model)
+        }
+        // 모델 목록도 새로 감지된 목록으로 갱신 (게이트웨이 에러 응답에서 추출한 허용 모델들)
+        const modelsResult = await ai.models()
+        if (modelsResult.models?.length) {
+          setAvailableModels(modelsResult.models)
+          term.writeln(`\x1b[2;37m   사용 가능 모델: [${modelsResult.models.join(', ')}]\x1b[0m`)
+        }
+      } catch { /* state/models 조회 실패 무시 */ }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error'
       term.writeln(`\r\n\x1b[31mError: ${errorMsg}\x1b[0m`)
@@ -705,11 +866,23 @@ export function useAITerminal(): UseAITerminalReturn {
   useEffect(() => { writePromptRef.current = writePrompt }, [writePrompt])
   useEffect(() => { runDetailedConnectionTraceRef.current = runDetailedConnectionTrace }, [runDetailedConnectionTrace])
 
-  // AI 30초 헬스체크
+  // AI 헬스체크 — 연속 실패 시 backoff (3회 실패 → 5분 간격, 10회 → 중단)
+  // Apply 성공 시 healthCheckRestartRef.current()로 재시작 가능
+  const healthCheckRestartRef = useRef<(() => void) | null>(null)
   useEffect(() => {
     if (!isWebView2()) return
-    const timer = setInterval(async () => {
-      if (document.visibilityState === 'hidden') return
+
+    let consecutiveFailures = 0
+    let currentInterval = 30_000
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let stopped = false
+
+    const tick = async () => {
+      if (stopped) return
+      if (document.visibilityState === 'hidden') {
+        timer = setTimeout(tick, currentInterval)
+        return
+      }
       try {
         const state = await ai.state()
         const serverEp = state.baseUrl || endpointUrlRef.current
@@ -722,12 +895,43 @@ export function useAITerminal(): UseAITerminalReturn {
           ? (state.isConfigured ? `${provLabel} Ready` : `${provLabel}: API Key 없음`)
           : (state.isConfigured ? `Ready on ${serverEp}` : `Offline at ${serverEp}`)
         setStatusMessage(statusMsg)
+        if (state.isConfigured) {
+          consecutiveFailures = 0
+          currentInterval = 30_000
+        } else {
+          consecutiveFailures++
+        }
       } catch {
+        consecutiveFailures++
         setIsConfigured(false)
         setStatusMessage(`Offline at ${endpointUrlRef.current}`)
       }
-    }, 30_000)
-    return () => clearInterval(timer)
+
+      if (consecutiveFailures >= 10) {
+        logger.warn('[HealthCheck] 10회 연속 실패 → 중단. Apply 누르면 재시작합니다.')
+        setStatusMessage(`Offline (health check paused — Apply 시 재시작)`)
+        return
+      }
+      // 3회 이상 실패 → 5분 간격으로 완화 (로그/네트워크 부하 감소)
+      currentInterval = consecutiveFailures >= 3 ? 300_000 : 30_000
+      timer = setTimeout(tick, currentInterval)
+    }
+
+    const restart = () => {
+      consecutiveFailures = 0
+      currentInterval = 30_000
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(tick, 1_000)  // 즉시 1초 후 재시작
+      logger.info('[HealthCheck] Apply 감지 — 재시작')
+    }
+    healthCheckRestartRef.current = restart
+
+    timer = setTimeout(tick, currentInterval)
+    return () => {
+      stopped = true
+      if (timer) clearTimeout(timer)
+      healthCheckRestartRef.current = null
+    }
   }, [])
 
   const handleCancel = useCallback(async () => {
@@ -753,6 +957,8 @@ export function useAITerminal(): UseAITerminalReturn {
     term.writeln('Type \x1b[33mhelp\x1b[0m for available commands.')
 
     if (isWebView2()) {
+      // 프리셋 목록 최초 로드
+      refreshPresets()
       ;(async () => {
         try {
           // 로그저장이 꺼져 있으면 세션 저장/복원 전체 스킵
@@ -835,12 +1041,15 @@ export function useAITerminal(): UseAITerminalReturn {
     apiKey,
     providers,
     saveApiLog,
+    allowInsecureSsl,
+    presets,
 
     setIsSettingsOpen,
     setIsSystemPromptOpen,
     setSystemPrompt,
     setApiKey,
     setSaveApiLog,
+    setAllowInsecureSsl,
     setIsDirty,
     setIsApplySuccess,
 
@@ -854,6 +1063,9 @@ export function useAITerminal(): UseAITerminalReturn {
     handleModelChange,
     handleCheck,
     handleApplySettings,
+    handleSavePreset,
+    handleLoadPreset,
+    handleDeletePreset,
     handleAnalyzeClick,
     handleCancel,
     handleClear,

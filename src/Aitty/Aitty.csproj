@@ -31,6 +31,11 @@
 
     <Message Text="[Aitty] dist → wwwroot 동기화" Importance="high" />
     <Exec Command="robocopy &quot;$(WebappDir)\dist&quot; &quot;$(WwwrootDir)&quot; /MIR /NJH /NJS /NDL /NC /NS" IgnoreExitCode="true" />
+
+    <!-- WebView2 가상호스트 매핑에서 crossorigin 속성은 스크립트 로드를 차단하므로 빌드 시 제거
+         (런타임 수정은 Program Files 등 읽기 전용 위치 설치 시 실패) -->
+    <Message Text="[Aitty] index.html crossorigin 속성 제거" Importance="high" />
+    <Exec Command="powershell -NoProfile -Command &quot;$f='$(WwwrootDir)\index.html'; if (Test-Path $f) { (Get-Content $f -Raw -Encoding UTF8) -replace ' crossorigin','' | Set-Content $f -NoNewline -Encoding UTF8 }&quot;" IgnoreExitCode="true" />
   </Target>
 
   <!-- React 빌드 후 wwwroot 파일을 동적으로 Content에 등록 (BeforeBuild 이후 평가) -->

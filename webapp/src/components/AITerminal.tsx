@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
@@ -10,6 +10,7 @@ import { SettingsDrawer } from '@components/SettingsDrawer'
 import ChatPanel from '@components/ChatPanel'
 import SecurityPanel from '@components/SecurityPanel'
 import { LogTab } from '@components/LogTab'
+import { PresetPasswordModal, type PresetPasswordMode } from '@components/PresetPasswordModal'
 import '@styles/chat.css'
 import '@styles/log-tab.css'
 
@@ -49,12 +50,15 @@ export function AITerminal({ sshConnected, activeTab, isSettingsOpen, onCloseSet
     apiKey,
     providers,
     saveApiLog,
+    allowInsecureSsl,
+    presets,
     chatMessages,
 
     setIsSystemPromptOpen,
     setSystemPrompt,
     setApiKey,
     setSaveApiLog,
+    setAllowInsecureSsl,
     setIsDirty,
     setIsApplySuccess,
 
@@ -63,6 +67,9 @@ export function AITerminal({ sshConnected, activeTab, isSettingsOpen, onCloseSet
     handleModelChange,
     handleCheck,
     handleApplySettings,
+    handleSavePreset,
+    handleLoadPreset,
+    handleDeletePreset,
     handleAnalyzeClick,
     handleCancel,
     handleClear,
@@ -76,6 +83,38 @@ export function AITerminal({ sshConnected, activeTab, isSettingsOpen, onCloseSet
       fitAddonRef.current.fit()
     }
   })
+
+  // 프리셋 암호 입력 모달 상태 — 저장/로드 모두 이 모달로 처리
+  const [passwordModal, setPasswordModal] = useState<{
+    mode: PresetPasswordMode
+    name: string
+    error: string | null
+    busy: boolean
+  } | null>(null)
+
+  const requestSavePreset = useCallback((name: string) => {
+    setPasswordModal({ mode: 'save', name, error: null, busy: false })
+  }, [])
+
+  const requestLoadPreset = useCallback((name: string) => {
+    setPasswordModal({ mode: 'load', name, error: null, busy: false })
+  }, [])
+
+  const handlePasswordConfirm = useCallback(async (password: string) => {
+    if (!passwordModal) return
+    setPasswordModal(m => m ? { ...m, busy: true, error: null } : m)
+    const result = passwordModal.mode === 'save'
+      ? await handleSavePreset(passwordModal.name, password)
+      : await handleLoadPreset(passwordModal.name, password)
+    if (result.success) {
+      setPasswordModal(null)
+    } else {
+      // 실패 — 모달 유지하고 에러 표시 (암호 재입력 유도)
+      setPasswordModal(m => m ? { ...m, busy: false, error: result.error ?? '처리 실패' } : m)
+    }
+  }, [passwordModal, handleSavePreset, handleLoadPreset])
+
+  const handlePasswordCancel = useCallback(() => setPasswordModal(null), [])
 
   // xterm initialization
   useEffect(() => {
@@ -351,6 +390,7 @@ export function AITerminal({ sshConnected, activeTab, isSettingsOpen, onCloseSet
         availableModels={availableModels}
         systemPrompt={systemPrompt}
         saveApiLog={saveApiLog}
+        allowInsecureSsl={allowInsecureSsl}
         isBusy={isBusy}
         isDirty={isDirty}
         isApplySuccess={isApplySuccess}
@@ -363,11 +403,27 @@ export function AITerminal({ sshConnected, activeTab, isSettingsOpen, onCloseSet
         onModelChange={handleModelChange}
         onSystemPromptChange={setSystemPrompt}
         onSaveApiLogChange={setSaveApiLog}
+        onAllowInsecureSslChange={setAllowInsecureSsl}
+        presets={presets}
+        onRequestSavePreset={requestSavePreset}
+        onRequestLoadPreset={requestLoadPreset}
+        onDeletePreset={handleDeletePreset}
         onCheck={handleCheck}
         onApply={handleApplySettings}
         onToggleSystemPrompt={() => setIsSystemPromptOpen(prev => !prev)}
         onMarkDirty={handleMarkDirty}
       />
+
+      {passwordModal && (
+        <PresetPasswordModal
+          mode={passwordModal.mode}
+          presetName={passwordModal.name}
+          errorMessage={passwordModal.error}
+          isBusy={passwordModal.busy}
+          onConfirm={handlePasswordConfirm}
+          onCancel={handlePasswordCancel}
+        />
+      )}
     </div>
   )
 }

@@ -71,3 +71,7 @@ build.ps1
 check*.ps1
 publish*.zip
 aitty2_v*.zip
+
+# --- WebView2 Evergreen Standalone Installer (186MB, GitHub 100MB 제한 초과) ---
+# 인스톨러 빌드 시 https://developer.microsoft.com/microsoft-edge/webview2 에서 다운로드
+installer/redist/MicrosoftEdgeWebView2RuntimeInstallerX64.exe
