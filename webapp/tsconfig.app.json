@@ -46,6 +46,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "include": ["src"],
+  "include": ["src", "policies"],
   "exclude": []
 }

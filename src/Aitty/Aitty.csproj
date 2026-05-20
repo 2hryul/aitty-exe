@@ -26,6 +26,14 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <!-- 위험명령 패턴 정책 SoT — webapp/policies/command-safety.json을 임베드
+       (프론트와 동일 파일 공유. CommandSafetyService에서 GetManifestResourceStream으로 로드) -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\webapp\policies\command-safety.json">
+      <LogicalName>Aitty.Resources.command-safety.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <!-- dotnet build/publish 전 React 자동 빌드 + wwwroot 동기화 -->
   <Target Name="BuildReactApp" BeforeTargets="BeforeBuild" Condition="Exists('$(MSBuildThisFileDirectory)..\..\webapp\package.json') AND '$(SkipReactBuild)' != 'true'">
     <PropertyGroup>
