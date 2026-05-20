@@ -4,30 +4,9 @@ import { ai, session, aiPreset, type AiProvider, type AiPresetInfo } from '@brid
 import type { ChatMessage } from '@app-types/chat'
 import { logger } from '@utils/logger'
 
-export const DEFAULT_MODEL = 'qwen2.5-coder:7b'
-export const DEFAULT_SYSTEM_PROMPT = 'You are a local Linux SSH assistant. Analyze terminal output, explain issues, and suggest safe next commands. Prefer minimal-risk commands first.'
+// Fallback only; backend `ai:providers` is the source of truth for default model/system prompt/endpoint.
+// 부팅 초기 paint 전 ai.providers() 응답 도착 전 사용되는 임시 placeholder.
 export const DEFAULT_ENDPOINT = import.meta.env.VITE_DEFAULT_OLLAMA_ENDPOINT || 'http://127.0.0.1:11434'
-
-// 프로바이더별 실제 API 엔드포인트 (프론트엔드 표시용)
-const PROVIDER_ENDPOINTS: Record<string, string> = {
-  gemini: 'https://generativelanguage.googleapis.com',
-  claude: 'https://api.anthropic.com',
-  openai: 'https://api.openai.com',
-}
-
-function mergeProviderEndpoints(backendProviders: AiProvider[]): AiProvider[] {
-  const PROVIDER_NAMES: Record<string, string> = {
-    ollama: 'API 접속',
-    gemini: 'Google Gemini',
-    claude: 'Anthropic Claude',
-    openai: 'OpenAI ChatGPT',
-  }
-  return backendProviders.map(p => ({
-    ...p,
-    name: PROVIDER_NAMES[p.id] ?? p.name,
-    ...(PROVIDER_ENDPOINTS[p.id] ? { endpoint: PROVIDER_ENDPOINTS[p.id] } : {}),
-  }))
-}
 
 export function isWebView2(): boolean {
   return !!window.chrome?.webview
@@ -149,7 +128,8 @@ export function useAITerminal(): UseAITerminalReturn {
   const endpointUrlRef = useRef(_savedEndpoint)
 
   const [isConfigured, setIsConfigured] = useState(false)
-  const [currentModel, setCurrentModel] = useState(DEFAULT_MODEL)
+  // 초기값은 빈 문자열 — ai.providers() 응답 도착 시 active provider의 defaultModel로 채워짐.
+  const [currentModel, setCurrentModel] = useState('')
   // sendMessage의 []-deps useCallback에서 stale closure 방지용 ref
   const currentModelRef = useRef(currentModel)
   useEffect(() => { currentModelRef.current = currentModel }, [currentModel])
@@ -158,7 +138,8 @@ export function useAITerminal(): UseAITerminalReturn {
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [isSettingsOpen, setIsSettingsOpen] = useState(true)
   const [isSystemPromptOpen, setIsSystemPromptOpen] = useState(false)
-  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT)
+  // 초기값은 빈 문자열 — ai.providers() 응답 도착 시 active provider의 defaultSystemPrompt로 채워짐.
+  const [systemPrompt, setSystemPrompt] = useState('')
   const [endpointUrl, setEndpointUrl] = useState(_savedEndpoint)
   const [statusMessage, setStatusMessage] = useState('Not checked')
   const [isBusy, setIsBusy] = useState(false)
@@ -167,11 +148,12 @@ export function useAITerminal(): UseAITerminalReturn {
 
   const [activeProvider, setActiveProvider] = useState<string>('ollama')
   const [apiKey, setApiKey] = useState('')
+  // 초기값은 backend ai.providers() 응답 도착 전 placeholder. 도착 시 전체 교체됨.
   const [providers, setProviders] = useState<AiProvider[]>([
     { id: 'ollama', name: 'API 접속',          status: 'local',      requiresApiKey: false },
-    { id: 'gemini', name: 'Google Gemini',    status: 'no-api-key', requiresApiKey: true,  endpoint: 'https://generativelanguage.googleapis.com' },
-    { id: 'claude', name: 'Anthropic Claude', status: 'no-api-key', requiresApiKey: true,  endpoint: 'https://api.anthropic.com' },
-    { id: 'openai', name: 'OpenAI ChatGPT',   status: 'no-api-key', requiresApiKey: true,  endpoint: 'https://api.openai.com' },
+    { id: 'gemini', name: 'Google Gemini',    status: 'no-api-key', requiresApiKey: true  },
+    { id: 'claude', name: 'Anthropic Claude', status: 'no-api-key', requiresApiKey: true  },
+    { id: 'openai', name: 'OpenAI',           status: 'no-api-key', requiresApiKey: true  },
   ])
   const [saveApiLog, setSaveApiLog] = useState<boolean>(() => {
     try {
@@ -238,7 +220,8 @@ export function useAITerminal(): UseAITerminalReturn {
       setIsConfigured(state.isConfigured)
       setEngineName(state.engine || 'ollama')
       setActiveProvider(currentProvider)
-      setProviders(mergeProviderEndpoints(provResult.providers))
+      // 백엔드 응답 그대로 사용 — endpoint/defaultModel/defaultSystemPrompt 모두 채워져 있음 (SoT).
+      setProviders(provResult.providers)
       setAvailableModels(modelList)
 
       const currentProviderInfo = provResult.providers.find(p => p.id === currentProvider)
@@ -250,11 +233,19 @@ export function useAITerminal(): UseAITerminalReturn {
         : (state.isConfigured ? `Ready on ${serverEp}` : `Offline at ${serverEp}`)
       setStatusMessage(statusMsg)
 
-      const serverModel = state.model || DEFAULT_MODEL
+      // active provider의 defaultModel을 SoT로 사용. backend state.model이 비어 있을 때만 폴백.
+      const providerDefaultModel = currentProviderInfo?.defaultModel ?? ''
+      const serverModel = state.model || providerDefaultModel
       const resolvedModel = modelList.length > 0
         ? (modelList.includes(serverModel) ? serverModel : modelList[0])
         : serverModel
       setCurrentModel(resolvedModel)
+
+      // 시스템 프롬프트 초기 채움 — 사용자가 아직 입력하지 않았을 때만 backend default로 채움.
+      // 함수형 업데이트로 latest state 읽어 deps array 오염 회피.
+      if (currentProviderInfo?.defaultSystemPrompt) {
+        setSystemPrompt(prev => prev || currentProviderInfo.defaultSystemPrompt!)
+      }
 
       if (announce) {
         const announceLabel = isApiKeyProvider ? providerLabel : `Ollama (${serverEp})`
@@ -434,7 +425,9 @@ export function useAITerminal(): UseAITerminalReturn {
     const statusMsg = isApiKeyProvider
       ? (state.isConfigured ? `${currentProviderLabel} Ready` : `${currentProviderLabel}: API Key 없음`)
       : (state.isConfigured ? `Ready on ${serverEp}` : `Offline at ${serverEp}`)
-    const serverModel = state.model || DEFAULT_MODEL
+    // active provider의 defaultModel을 폴백으로 사용 — useState 초기값이 ''이므로 currentModel 폴백은 부적합.
+    const providerDefaultModel = currentProviderInfo?.defaultModel ?? currentModel
+    const serverModel = state.model || providerDefaultModel
     const resolvedModel = modelList.length > 0
       ? (modelList.includes(serverModel) ? serverModel : modelList[0])
       : serverModel
@@ -446,6 +439,10 @@ export function useAITerminal(): UseAITerminalReturn {
     setAvailableModels(modelList)
     setStatusMessage(statusMsg)
     setCurrentModel(resolvedModel)
+    // 시스템 프롬프트 초기 채움 — 사용자가 아직 입력하지 않은 경우만.
+    if (currentProviderInfo?.defaultSystemPrompt) {
+      setSystemPrompt(prev => prev || currentProviderInfo.defaultSystemPrompt!)
+    }
 
     step(stepNo, totalSteps, '최종 판정')
     if (state.isConfigured) {

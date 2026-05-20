@@ -14,6 +14,14 @@ public interface IAiService : IDisposable
     bool IsConfigured    { get; }
     IReadOnlyList<AiChatMessage> History { get; }
 
+    // ── 디폴트값 Single Source of Truth (프론트엔드는 IPC로만 조회) ── //
+    /// <summary>각 서비스의 권장 기본 모델명.</summary>
+    string DefaultModel { get; }
+    /// <summary>권장 기본 시스템 프롬프트. null이면 시스템 프롬프트 미사용 권장.</summary>
+    string? DefaultSystemPrompt { get; }
+    /// <summary>현재 base URL (claude/gemini는 공식 URL 고정 반환).</summary>
+    string BaseUrl { get; }
+
     void SetModel(string model);
     void SetSystemPrompt(string? systemPrompt);
     void SetHistory(IEnumerable<AiChatMessage> messages);  // 세션 복원

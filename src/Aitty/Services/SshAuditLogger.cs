@@ -18,10 +18,27 @@ public static class SshAuditLogger
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "ssh-ai-terminal", "logs");
 
-    // 민감 패턴: password=, apikey=, token=, secret=, passphrase= 등
+    // 민감 패턴: password=, apikey=, token=, secret=, passphrase= 등 (key=value 형식)
     private static readonly Regex SensitivePattern = new(
         @"(password|passwd|apikey|api_key|token|secret|passphrase|authorization)\s*[=:'""\s]\s*\S+",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // PII 추가 패턴 — 한국 실무 환경 대응
+    // 주의: 이 마스킹은 감사 로그/UI 미리보기에만 적용. AI 분석 페이로드에는 절대 적용 금지(분석 정확도 훼손).
+    private static readonly Regex PiiRrn    = new(@"\b\d{6}-?[1-4]\d{6}\b", RegexOptions.Compiled);
+    private static readonly Regex PiiCard   = new(@"\b(?:\d{4}[- ]?){3}\d{4}\b", RegexOptions.Compiled);
+    private static readonly Regex PiiJwt    = new(@"\beyJ[\w-]+\.[\w-]+\.[\w-]+\b", RegexOptions.Compiled);
+    private static readonly Regex PiiEmail  = new(@"\b[\w.+-]+@[\w-]+\.[\w.-]+\b", RegexOptions.Compiled);
+    private static readonly Regex PiiIpv4   = new(
+        @"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b",
+        RegexOptions.Compiled);
+    // \b는 ASCII 워드 경계라 한글 매칭 불가 → 한글 키는 별도 패턴
+    private static readonly Regex PiiEmpKey   = new(
+        @"\b(emp(?:loyee)?_?id)\s*[=:]\s*\S+",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex PiiEmpKeyKr = new(
+        @"(사번)\s*[=:]\s*\S+",
+        RegexOptions.Compiled);
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -53,9 +70,9 @@ public static class SshAuditLogger
                 RemoteUser   = remoteUser,
                 RemoteHost   = remoteHost,
                 Port         = port,
-                Command      = MaskSensitive(command),
+                Command      = MaskPii(command),
                 ExitStatus   = success ? "success" : "failure",
-                OutputPreview = MaskSensitive(
+                OutputPreview = MaskPii(
                     outputPreview.Length > 500
                         ? outputPreview[..500] + "…"
                         : outputPreview),
@@ -87,7 +104,7 @@ public static class SshAuditLogger
                 timestamp = DateTime.UtcNow.ToString("o"),
                 @event    = "logs:fetch",
                 localUser = Environment.UserName,
-                source    = MaskSensitive(source),
+                source    = MaskPii(source),
                 sizeBytes
             };
 
@@ -160,8 +177,37 @@ public static class SshAuditLogger
         catch { /* 로그 실패 무시 */ }
     }
 
-    private static string MaskSensitive(string command)
-        => SensitivePattern.Replace(command, m => m.Groups[1].Value + "=***");
+    /// <summary>
+    /// 키-값 시크릿 + PII(주민/카드/JWT/이메일/IPv4/사번 키) 일괄 마스킹.
+    /// 감사 로그 및 UI 미리보기 전용 — AI 분석 페이로드에는 절대 적용하지 말 것.
+    /// </summary>
+    private static string MaskPii(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        s = SensitivePattern.Replace(s, m => m.Groups[1].Value + "=***");
+        s = PiiRrn.Replace(s, "***-*******");
+        s = PiiCard.Replace(s, "****-****-****-****");
+        s = PiiJwt.Replace(s, "eyJ***");
+        s = PiiEmail.Replace(s, m => MaskEmail(m.Value));
+        s = PiiIpv4.Replace(s, m => MaskIpv4(m.Value));
+        s = PiiEmpKey.Replace(s, m => m.Groups[1].Value + "=***");
+        s = PiiEmpKeyKr.Replace(s, m => m.Groups[1].Value + "=***");
+        return s;
+    }
+
+    private static string MaskEmail(string e)
+    {
+        var i = e.IndexOf('@');
+        if (i <= 0) return "***";
+        if (i == 1) return e[..1] + "***" + e[i..];
+        return e[..1] + "***" + e[i..];
+    }
+
+    private static string MaskIpv4(string ip)
+    {
+        var p = ip.Split('.');
+        return p.Length == 4 ? $"{p[0]}.{p[1]}.*.*" : ip;
+    }
 
     private class AuditEntry
     {

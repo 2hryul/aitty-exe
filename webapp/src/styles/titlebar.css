@@ -171,7 +171,9 @@
   position: absolute;
   top: 0;
   right: 0;
-  width: 320px;
+  width: var(--settings-drawer-w, 384px);
+  min-width: 280px;
+  max-width: 720px;
   height: 100%;
   background: var(--bg-2);
   border-left: 1px solid var(--border);
@@ -185,6 +187,34 @@
 
 .settings-drawer.open {
   transform: translateX(0);
+}
+
+.settings-drawer-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 51;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.settings-drawer-resize-handle:hover,
+.settings-drawer-resize-handle.dragging {
+  background: var(--accent-1, #1976d2);
+  opacity: 0.25;
+}
+
+.preset-row .preset-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 6px 10px;
+}
+
+.preset-select {
+  min-width: 0;
 }
 
 .settings-drawer-header {

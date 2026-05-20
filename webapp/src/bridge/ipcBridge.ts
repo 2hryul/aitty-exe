@@ -152,7 +152,11 @@ export interface AiProvider {
   name: string
   status: string
   requiresApiKey: boolean
-  endpoint?: string
+  endpoint?: string | null
+  /** 백엔드가 권장하는 기본 모델명. 프론트엔드는 초기 mount 시 이 값으로 currentModel 설정. */
+  defaultModel?: string
+  /** 백엔드가 권장하는 기본 시스템 프롬프트. null이면 시스템 프롬프트 미사용 권장. */
+  defaultSystemPrompt?: string | null
 }
 
 export interface AiProvidersResponse {
@@ -292,6 +296,22 @@ export interface LogPayload {
   collectedAt: string
 }
 
+// logcheck.sh 5개 모드 — UI 액션 버튼과 1:1 대응
+export type LogCheckMode = 'summary' | 'search' | 'recent' | 'range' | 'top'
+
+export interface LogCheckRequest {
+  path: string
+  mode: LogCheckMode
+  pattern?: string
+  ignoreCase?: boolean
+  ctxAfter?: number
+  ctxBefore?: number
+  hours?: number          // recent 모드 — 1~720
+  from?: string           // range 모드 — "YYYY-MM-DD HH:MM:SS"
+  to?: string             // range 모드 — "YYYY-MM-DD HH:MM:SS"
+  topN?: number           // top 모드 — 1~100
+}
+
 // 백엔드 응답은 C# PascalCase 그대로 수신 ("Ok" | "Warn" | "Reject").
 // 훅 레이어에서 소문자로 정규화.
 export interface LogBudgetCheckResponse {
@@ -312,13 +332,26 @@ export const logs = {
   fetchExec: (command: string) =>
     invoke<LogPayload>('logs:fetch-exec', { command }),
 
+  // logcheck.sh 5개 모드 통합 진입점 — 백엔드가 임베디드 스크립트를 stdin으로 전달해 원격 실행
+  check: (req: LogCheckRequest) =>
+    invoke<LogPayload>('logs:check', req),
+
   evaluate: (sizeBytes: number, provider: string, model: string) =>
     invoke<LogBudgetCheckResponse>('logs:evaluate', { sizeBytes, provider, model }),
 
-  analyze: (payload: LogPayload, question: string, onChunk?: StreamChunkHandler) =>
+  // 백엔드 LogAnalyzePayload (flat: source, content, question, systemPromptMode, ...)에 맞춰
+  // payload를 spread로 평탄화 — v0.3.0까지 nested {payload, question}로 보내며 backend가 source/content를
+  // 인식 못하던 결함을 v0.3.1에서 수정.
+  analyze: (
+    payload: LogPayload,
+    question: string,
+    onChunk?: StreamChunkHandler,
+    systemPromptMode?: 'default' | 'merge' | 'override',
+    systemPromptOverride?: string,
+  ) =>
     createStreamRequest<{ content: string }>(
       'logs:analyze',
-      { payload, question },
+      { ...payload, question, systemPromptMode, systemPromptOverride },
       onChunk,
     ),
 
@@ -328,10 +361,12 @@ export const logs = {
     budget: number,
     onChunk?: StreamChunkHandler,
     onProgress?: ProgressHandler,
+    systemPromptMode?: 'default' | 'merge' | 'override',
+    systemPromptOverride?: string,
   ) =>
     createChunkedRequest<{ content: string; chunks?: number }>(
       'logs:analyze-chunked',
-      { payload, question, budget },
+      { ...payload, question, budget, systemPromptMode, systemPromptOverride },
       onChunk,
       onProgress,
     ),

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { logs, type LogFileInfo, type LogPayload } from '@bridge/ipcBridge'
+import { logs, type LogCheckRequest, type LogFileInfo, type LogPayload } from '@bridge/ipcBridge'
 import { evaluate, type BudgetCheck } from '@utils/logBudget'
 import { logger } from '@utils/logger'
 
@@ -22,13 +22,21 @@ export interface LogAnalyzeState {
   error: string | null
 }
 
+export type SystemPromptMode = 'default' | 'merge' | 'override'
+
+export interface AnalyzeOptions {
+  systemPromptMode?: SystemPromptMode
+  systemPromptOverride?: string
+}
+
 export interface LogAnalyzeActions {
   checkFile: (path: string) => Promise<void>
   fetchFile: (path: string, tailBytes: number, fullFile: boolean) => Promise<void>
   fetchExec: (command: string) => Promise<void>
+  runLogCheck: (req: LogCheckRequest) => Promise<void>
   setPayload: (payload: LogPayload) => void      // 자르기 등 클라이언트 조작 결과 반영
-  analyze: (question: string) => Promise<void>
-  analyzeChunked: (question: string) => Promise<void>
+  analyze: (question: string, options?: AnalyzeOptions) => Promise<void>
+  analyzeChunked: (question: string, options?: AnalyzeOptions) => Promise<void>
   cancel: () => void
   reset: () => void
 }
@@ -165,10 +173,30 @@ export function useLogAnalyze(args: UseLogAnalyzeArgs): LogAnalyzeState & LogAna
       const msg = formatError('fetchExec', '명령 실행', err)
       logger.error(msg)
       setState(s => ({ ...s, isFetching: false, error: msg }))
+      return
     }
   }, [])
 
-  const analyze = useCallback(async (question: string) => {
+  /** logcheck.sh 모드 실행 — 결과를 payload로 저장 + 컨텍스트 크기 재평가 */
+  const runLogCheck = useCallback(async (req: LogCheckRequest) => {
+    setState(s => ({ ...s, isFetching: true, error: null, result: '' }))
+    resultBufferRef.current = ''
+    try {
+      const payload = await logs.check(req)
+      setState(s => ({
+        ...s,
+        payload,
+        budgetCheck: recheckBudget(payload, providerRef.current, modelRef.current),
+        isFetching: false,
+      }))
+    } catch (err) {
+      const msg = formatError('runLogCheck', `logcheck:${req.mode}`, err)
+      logger.error(msg)
+      setState(s => ({ ...s, isFetching: false, error: msg }))
+    }
+  }, [])
+
+  const analyze = useCallback(async (question: string, options?: AnalyzeOptions) => {
     const payload = state.payload
     if (!payload) {
       setState(s => ({ ...s, error: '[analyze] 수집된 로그가 없습니다.' }))
@@ -177,7 +205,7 @@ export function useLogAnalyze(args: UseLogAnalyzeArgs): LogAnalyzeState & LogAna
     resetResult()
     setState(s => ({ ...s, isStreaming: true, result: '', error: null, chunkProgress: null }))
     try {
-      await logs.analyze(payload, question, appendChunk)
+      await logs.analyze(payload, question, appendChunk, options?.systemPromptMode, options?.systemPromptOverride)
       setState(s => ({ ...s, isStreaming: false }))
     } catch (err) {
       const msg = formatError('analyze', 'AI 분석', err)
@@ -186,11 +214,11 @@ export function useLogAnalyze(args: UseLogAnalyzeArgs): LogAnalyzeState & LogAna
     }
   }, [state.payload, appendChunk])
 
-  const analyzeChunked = useCallback(async (question: string) => {
+  const analyzeChunked = useCallback(async (question: string, options?: AnalyzeOptions) => {
     const payload = state.payload
     const check = state.budgetCheck
     if (!payload || !check) {
-      setState(s => ({ ...s, error: '[analyzeChunked] 수집된 로그 또는 예산 정보가 없습니다.' }))
+      setState(s => ({ ...s, error: '[analyzeChunked] 수집된 로그 또는 컨텍스트 크기 정보가 없습니다.' }))
       return
     }
     resetResult()
@@ -202,6 +230,8 @@ export function useLogAnalyze(args: UseLogAnalyzeArgs): LogAnalyzeState & LogAna
         check.budget,
         appendChunk,
         progress => setState(s => ({ ...s, chunkProgress: progress })),
+        options?.systemPromptMode,
+        options?.systemPromptOverride,
       )
       setState(s => ({ ...s, isStreaming: false }))
     } catch (err) {
@@ -221,6 +251,7 @@ export function useLogAnalyze(args: UseLogAnalyzeArgs): LogAnalyzeState & LogAna
     checkFile,
     fetchFile,
     fetchExec,
+    runLogCheck,
     setPayload,
     analyze,
     analyzeChunked,

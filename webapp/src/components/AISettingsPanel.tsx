@@ -109,8 +109,9 @@ export function AISettingsPanel({
         {/* AI 프리셋 — 드롭다운 + 로드/삭제/저장 통합 (AES-256-GCM + 사용자 암호) */}
         <div className="form-group" style={{ gridColumn: '1 / -1' }}>
           <label title="AES-256-GCM + 사용자 암호 기반으로 저장되는 AI 설정">🔐 AI 프리셋</label>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <div className="preset-row" style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <select
+              className="preset-select"
               value={selectedPreset}
               onChange={e => setSelectedPreset(e.target.value)}
               disabled={isBusy || presets.length === 0}
@@ -127,6 +128,7 @@ export function AISettingsPanel({
             </select>
             <button
               type="button"
+              className="preset-btn"
               onClick={handleLoadClick}
               disabled={!selectedPreset || isBusy}
               title="선택한 프리셋을 현재 세션에 적용 (암호 필요)"
@@ -135,6 +137,7 @@ export function AISettingsPanel({
             </button>
             <button
               type="button"
+              className="preset-btn"
               onClick={handleDeleteClick}
               disabled={!selectedPreset || isBusy}
               title="선택한 프리셋 삭제"
@@ -144,6 +147,7 @@ export function AISettingsPanel({
             </button>
             <button
               type="button"
+              className="preset-btn"
               onClick={handleSaveClick}
               disabled={!canSavePreset || isBusy}
               title={canSavePreset

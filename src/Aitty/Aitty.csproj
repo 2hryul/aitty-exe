@@ -9,14 +9,21 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <SatelliteResourceLanguages>ko</SatelliteResourceLanguages>
     <AssemblyName>Aitty</AssemblyName>
-    <Version>0.2.9</Version>
-    <AssemblyVersion>0.2.9.0</AssemblyVersion>
-    <FileVersion>0.2.9.0</FileVersion>
+    <Version>0.4.0</Version>
+    <AssemblyVersion>0.4.0.0</AssemblyVersion>
+    <FileVersion>0.4.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3800.47" />
     <PackageReference Include="SSH.NET" Version="2025.1.0" />
+  </ItemGroup>
+
+  <!-- 원격 서버에서 실행될 logcheck.sh를 어셈블리에 임베드 (LogCheckService에서 GetManifestResourceStream으로 로드) -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\logcheck.sh">
+      <LogicalName>Aitty.Resources.logcheck.sh</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <!-- dotnet build/publish 전 React 자동 빌드 + wwwroot 동기화 -->

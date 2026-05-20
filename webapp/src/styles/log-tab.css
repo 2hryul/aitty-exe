@@ -12,7 +12,7 @@
   font-size: 13px;
 }
 
-/* ── 모드 셀렉터 ─────────────────────────────── */
+/* ── 모드 셀렉터 (legacy 파일/명령 토글 — 미사용이지만 보존) ── */
 .log-mode-selector {
   display: inline-flex;
   gap: 0;
@@ -35,6 +35,92 @@
 }
 .log-mode-btn:not(.active):hover {
   background: var(--bg-3);
+}
+
+/* ── logcheck 5개 모드 탭 ─────────────────────── */
+.log-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--txt-2);
+  margin-bottom: 4px;
+}
+.log-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.log-mode-tab {
+  padding: 8px 4px;
+  background: var(--bg-1);
+  color: var(--txt-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.log-mode-tab:hover { background: var(--bg-3); }
+.log-mode-tab.active {
+  background: var(--accent-1);
+  color: #fff;
+  border-color: var(--accent-1);
+}
+.log-mode-inputs {
+  padding: 8px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+.log-pattern-input {
+  flex: 1;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  color: var(--txt-1);
+  padding: 6px 10px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+}
+
+/* ── 결과 탭 (셸 출력 / AI 응답 토글) ─────────── */
+.log-result-tabs {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.log-result-tab {
+  padding: 4px 10px;
+  background: var(--bg-2);
+  color: var(--txt-2);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+.log-result-tab.active {
+  background: var(--accent-1);
+  color: #fff;
+}
+.log-result-toolbar-spacer { flex: 1; }
+.log-result-shell {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.log-result-placeholder {
+  color: var(--txt-3);
+  font-style: italic;
+}
+.log-result-meta {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--txt-3);
 }
 
 /* ── 폼 ──────────────────────────────────────── */
@@ -500,4 +586,94 @@
   border-radius: 3px;
   font-family: Consolas, "Courier New", monospace;
   font-size: 0.95em;
+}
+
+/* ── 시간 범위 위저드 ─────────────────────────── */
+.log-time-wizard {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.log-time-wizard summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--txt-2);
+  user-select: none;
+}
+.log-time-wizard[open] summary { margin-bottom: 8px; }
+.log-time-wizard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.log-time-label {
+  font-size: 12px;
+  color: var(--txt-2);
+}
+.log-radio-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--txt-1);
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+/* ── 시스템 프롬프트 옵션 ─────────────────────── */
+.log-sys-prompt-options {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.log-sys-prompt-options summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--txt-2);
+  user-select: none;
+}
+.log-sys-prompt-options[open] summary { margin-bottom: 8px; }
+.log-sys-prompt-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  background: var(--accent-1);
+  color: white;
+  border-radius: 8px;
+}
+.log-sys-prompt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.log-sys-prompt-input {
+  width: 100%;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  color: var(--txt-1);
+  padding: 6px 8px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+.log-sys-prompt-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── 결과 툴바 (복사/저장) ─────────────────────── */
+.log-result-toolbar {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.log-btn-tool {
+  font-size: 12px;
+  padding: 4px 10px;
 }

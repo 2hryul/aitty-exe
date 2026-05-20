@@ -31,9 +31,13 @@ public class LocalLlmService : IAiService
     // Ollama /api/generate context 토큰 (대화 연속성 유지)
     private long[]? _context;
 
+    // 디폴트값 SoT — 프론트엔드는 IPC(ai:providers)로만 조회
+    internal const string DefaultModelConst = "qwen2.5-coder:7b";
+    internal const string DefaultSystemPromptConst = "You are a local Linux SSH assistant. Analyze terminal output, explain issues, and suggest safe next commands. Prefer minimal-risk commands first.";
+
     private string _baseUrl = GetDefaultBaseUrl();
-    private string _model = "qwen2.5-coder:7b";
-    private string? _systemPrompt = "You are a local Linux SSH assistant. Analyze terminal output, explain issues, and suggest safe next commands. Prefer minimal-risk commands first.";
+    private string _model = DefaultModelConst;
+    private string? _systemPrompt = DefaultSystemPromptConst;
     private string? _apiKey;
 
     public LocalLlmService() { }
@@ -44,6 +48,11 @@ public class LocalLlmService : IAiService
     public string? SystemPrompt => _systemPrompt;
     public string CurrentBaseUrl => _baseUrl;
     public IReadOnlyList<AiChatMessage> History => _conversationHistory.AsReadOnly();
+
+    // ── IAiService 디폴트 노출 (SoT) ──────────────────────── //
+    public string DefaultModel => DefaultModelConst;
+    public string? DefaultSystemPrompt => DefaultSystemPromptConst;
+    public string BaseUrl => _baseUrl;
 
     public void SetBaseUrl(string url)
     {

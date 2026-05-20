@@ -2,9 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ai, type LogPayload } from '@bridge/ipcBridge'
-import { useLogAnalyze, type LogMode } from '@hooks/useLogAnalyze'
+import { useLogAnalyze } from '@hooks/useLogAnalyze'
 import { truncateTailBytes } from '@utils/logBudget'
 import { logger } from '@utils/logger'
+import {
+  buildSummaryRequest,
+  buildSearchRequest,
+  buildRecentRequest,
+  buildRangeRequest,
+  buildTopRequest,
+  fromDateTimeLocal,
+  toDateTimeLocal,
+  modeLabel,
+} from '@utils/logCheckRequest'
+import type { LogCheckMode } from '@bridge/ipcBridge'
 import { LogPresetSelect } from './LogPresetSelect'
 import { LogBudgetModal } from './LogBudgetModal'
 import '@styles/log-tab.css'
@@ -13,20 +24,10 @@ interface LogTabProps {
   provider: string
   model: string
   availableModels: string[]
-  /** 모델 변경 시 AITerminal 측 상태 갱신을 트리거하고 싶을 때 사용 (선택) */
   onModelChanged?: (model: string) => void
 }
 
-// 플랜 §1 명령 템플릿 — 사용자 편집 가능(placeholder는 수동 치환)
-const COMMAND_TEMPLATES: { label: string; template: string }[] = [
-  { label: 'tail -n 200',              template: 'tail -n 200 {path}' },
-  { label: 'journalctl 최근 {N}{unit}', template: 'journalctl --since "{N} {unit} ago" --no-pager' },
-  { label: 'dmesg (last 500)',         template: 'dmesg -T | tail -n 500' },
-  { label: 'grep {keyword}',           template: 'grep -E "{keyword}" {path} | tail -n 500' },
-]
-
-// /g 플래그는 .test() 호출 시 lastIndex를 누적 변경하므로 같은 문자열에도 결과가 번갈아 나옴 → boolean 체크 용도엔 /g 제거가 안전
-const PLACEHOLDER_PATTERN = /\{(path|N|unit|keyword)\}/
+const MODES: LogCheckMode[] = ['summary', 'search', 'recent', 'range', 'top']
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -34,44 +35,39 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`
 }
 
-/**
- * 파일 경로 입력 검증 — 백엔드 왕복 전 UI에서 즉시 거절 (타이포/실수 방지용).
- * 백엔드도 검증하지만 여기서 1차 걸러 IPC 낭비와 로그 오염을 줄인다.
- * @returns 오류 메시지(한글) 또는 null(통과)
- */
-function validateFilePath(path: string): string | null {
-  const trimmed = path.trim()
-  if (!trimmed) return '경로를 입력하세요'
-  if (trimmed.includes('..')) return '상대 경로(..)는 허용되지 않습니다'
-  if (!trimmed.startsWith('/')) return '절대 경로(/)로 입력하세요'
-  return null
+function nowStamp(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`
 }
 
-function formatDate(iso: string | null): string {
-  if (!iso) return '-'
-  try {
-    const d = new Date(iso)
-    return d.toLocaleString()
-  } catch {
-    return iso
-  }
+function slugify(s: string): string {
+  return s.replace(/[/\\:?<>|*"\s]+/g, '_').replace(/_+/g, '_').slice(0, 64) || 'log'
 }
 
 export function LogTab({ provider, model, availableModels, onModelChanged }: LogTabProps) {
-  const [mode, setMode] = useState<LogMode>('file')
   const [filePath, setFilePath] = useState('')
-  const [tailBytes, setTailBytes] = useState(256 * 1024) // 256KB
-  const [fullFile, setFullFile] = useState(false)
-  const [command, setCommand] = useState('')
+  const [activeMode, setActiveMode] = useState<LogCheckMode>('summary')
+
+  // 모드별 입력 상태 — 각 모드 활성화 시 해당 입력만 펼침
+  const [pattern, setPattern] = useState('')
+  const [ignoreCase, setIgnoreCase] = useState(false)
+  const [ctxAfter, setCtxAfter] = useState(0)
+  const [ctxBefore, setCtxBefore] = useState(0)
+  const [hours, setHours] = useState(1)
+  const [rangeFrom, setRangeFrom] = useState<string>(() => toDateTimeLocal(new Date(Date.now() - 60 * 60_000)))
+  const [rangeTo, setRangeTo] = useState<string>(() => toDateTimeLocal(new Date()))
+  const [topN, setTopN] = useState(10)
+
   const [question, setQuestion] = useState('')
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false)
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [currentModel, setCurrentModel] = useState(model)
-  // UI-local validation error — 백엔드 왕복 전에 입력 오류 즉시 표시 (타이포 등)
   const [localError, setLocalError] = useState<string | null>(null)
+  const [copyState, setCopyState] = useState<'idle' | 'done'>('idle')
+  // 결과 표시 모드 — runLogCheck 직후 'shell', AI 분석 직후 'ai'. 사용자가 토글 가능.
+  const [viewMode, setViewMode] = useState<'shell' | 'ai'>('shell')
 
-  // model prop 갱신 시 내부 상태 동기화 (모달 열려있을 땐 사용자 선택 보존)
-  // 모달 열린 동안 사용자의 모델 전환 선택을 보존하기 위해 currentModel/isBudgetModalOpen은 의도적으로 deps에서 제외
+  // model prop 변경 시 동기화 (모달 열려있을 땐 사용자 선택 보존)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!isBudgetModalOpen && model !== currentModel) {
@@ -81,35 +77,35 @@ export function LogTab({ provider, model, availableModels, onModelChanged }: Log
 
   const hook = useLogAnalyze({ provider, model: currentModel })
 
-  const handleCheckFile = useCallback(() => {
-    const err = validateFilePath(filePath)
-    if (err) { setLocalError(err); return }
+  // ─── logcheck 실행 ─────────────────────────────────────────────────
+  const handleRun = useCallback(async () => {
     setLocalError(null)
-    hook.checkFile(filePath.trim())
-  }, [filePath, hook])
-
-  const handleFetch = useCallback(async () => {
-    if (mode === 'file') {
-      const err = validateFilePath(filePath)
-      if (err) { setLocalError(err); return }
-      setLocalError(null)
-      await hook.fetchFile(filePath.trim(), tailBytes, fullFile)
-    } else {
-      if (!command.trim()) return
-      // placeholder 남아있으면 경고
-      if (PLACEHOLDER_PATTERN.test(command)) {
-        window.alert('명령에 {path}/{N}/{unit}/{keyword} placeholder가 남아있습니다. 실제 값으로 바꾼 뒤 실행하세요.')
-        return
+    try {
+      let req
+      switch (activeMode) {
+        case 'summary':
+          req = buildSummaryRequest(filePath); break
+        case 'search':
+          req = buildSearchRequest(filePath, { pattern, ignoreCase, ctxAfter, ctxBefore }); break
+        case 'recent':
+          req = buildRecentRequest(filePath, { hours }); break
+        case 'range':
+          req = buildRangeRequest(filePath, {
+            from: fromDateTimeLocal(rangeFrom),
+            to:   fromDateTimeLocal(rangeTo),
+          }); break
+        case 'top':
+          req = buildTopRequest(filePath, { topN }); break
       }
-      setLocalError(null)
-      await hook.fetchExec(command.trim())
+      await hook.runLogCheck(req)
+      setViewMode('shell')   // 새 셸 출력 도착 → 셸 출력 화면으로 전환
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '입력값 오류'
+      setLocalError(msg)
     }
-    // 수집 후 예산 경고 자동 모달
-    // (상태 업데이트 후 다음 렌더에서 체크)
-    setIsBudgetModalOpen(false) // 재수집 시 일단 닫기
-  }, [mode, filePath, tailBytes, fullFile, command, hook])
+  }, [activeMode, filePath, pattern, ignoreCase, ctxAfter, ctxBefore, hours, rangeFrom, rangeTo, topN, hook])
 
-  // budgetCheck 경고/거부 발생 시 모달 자동 오픈 (수집 직후 1회)
+  // ─── 컨텍스트 크기 모달 처리 ──────────────────────────────────────
   const { budgetCheck } = hook
   useEffect(() => {
     if (budgetCheck && (budgetCheck.status === 'warn' || budgetCheck.status === 'reject')) {
@@ -123,6 +119,7 @@ export function LogTab({ provider, model, availableModels, onModelChanged }: Log
   const handleSplit = useCallback(async () => {
     setIsBudgetModalOpen(false)
     await hook.analyzeChunked(question.trim())
+    setViewMode('ai')
   }, [hook, question])
 
   const handleTruncate = useCallback(() => {
@@ -143,7 +140,6 @@ export function LogTab({ provider, model, availableModels, onModelChanged }: Log
       await ai.setModel(newModel)
       setCurrentModel(newModel)
       onModelChanged?.(newModel)
-      // 기존 payload가 있으면 재평가 (hook 내부 recheckBudget 트리거)
       if (hook.payload) hook.setPayload(hook.payload)
     } catch (err) {
       logger.error('[LogTab.handleModelSwitch] 모델 전환 실패', { error: err })
@@ -151,31 +147,82 @@ export function LogTab({ provider, model, availableModels, onModelChanged }: Log
     }
   }, [hook, onModelChanged])
 
+  // ─── AI 분석 ────────────────────────────────────────────────────
   const handleAnalyze = useCallback(async () => {
-    if (!hook.payload) return
+    if (!hook.payload) {
+      setLocalError('분석할 logcheck 결과가 없습니다 — 먼저 [실행]을 누르세요')
+      return
+    }
     if (hook.budgetCheck?.status === 'reject') {
       setIsBudgetModalOpen(true)
       return
     }
+    setLocalError(null)
     await hook.analyze(question.trim())
+    setViewMode('ai')
   }, [hook, question])
 
-  const handleCancel = useCallback(() => {
-    hook.cancel()
-  }, [hook])
+  const handleCancel = useCallback(() => { hook.cancel() }, [hook])
 
-  const handleTemplateSelect = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const idx = parseInt(e.target.value, 10)
-    if (Number.isNaN(idx) || idx < 0 || idx >= COMMAND_TEMPLATES.length) return
-    setCommand(COMMAND_TEMPLATES[idx].template)
-    e.target.value = ''
-  }, [])
+  // ─── 결과 export ────────────────────────────────────────────────
+  const buildExportContent = useCallback((): string | null => {
+    if (!hook.payload) return null
+    const p = hook.payload
+    const body = viewMode === 'ai' ? hook.result : p.content
+    if (!body) return null
+    const q = question.trim() || '(없음)'
+    const lines = [
+      '---',
+      `source: ${p.source}`,
+      `host: ${p.host ?? '(unknown)'}`,
+      `sizeBytes: ${p.sizeBytes}`,
+      `lineCount: ${p.lineCount}`,
+      `collectedAt: ${p.collectedAt}`,
+      `provider: ${provider}`,
+      `model: ${currentModel}`,
+      `viewMode: ${viewMode}`,
+      `question: ${q.replace(/\n/g, ' ')}`,
+      '---',
+      '',
+      viewMode === 'ai' ? '# AI 분석 결과' : '# logcheck 출력',
+      '',
+      body,
+    ]
+    return lines.join('\n')
+  }, [hook.payload, hook.result, viewMode, question, provider, currentModel])
 
-  const previewText = useMemo(() => {
-    if (!hook.payload) return ''
-    return hook.payload.content.slice(0, 2048)
-  }, [hook.payload])
+  const handleCopyResult = useCallback(async () => {
+    const body = buildExportContent()
+    if (!body) return
+    try {
+      await navigator.clipboard.writeText(body)
+      setCopyState('done')
+      window.setTimeout(() => setCopyState('idle'), 1500)
+    } catch (err) {
+      logger.error('[LogTab.handleCopyResult] 클립보드 쓰기 실패', { error: err })
+      setLocalError('클립보드 쓰기에 실패했습니다 (브라우저 권한 확인)')
+    }
+  }, [buildExportContent])
 
+  const handleDownloadResult = useCallback(() => {
+    const body = buildExportContent()
+    if (!body || !hook.payload) return
+    const filename = `aitty-log_${slugify(hook.payload.source)}_${nowStamp()}.md`
+    const blob = new Blob([body], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    try {
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }, [buildExportContent, hook.payload])
+
+  // ─── 마크다운 렌더 컴포넌트 ──────────────────────────────────────
   const markdownComponents = useMemo(() => ({
     code({ className, children, ...props }: { className?: string; children?: React.ReactNode; [key: string]: unknown }) {
       const match = /language-(\w+)/.exec(className || '')
@@ -198,164 +245,140 @@ export function LogTab({ provider, model, availableModels, onModelChanged }: Log
     : budgetCheck?.status === 'reject' ? 'log-budget-banner-reject'
     : ''
 
+  const hasShellOutput = !!hook.payload?.content
+  const hasAiOutput = !!hook.result
+  const showResultPanel = hasShellOutput || hasAiOutput || hook.isFetching || hook.isStreaming
+
   return (
     <div className="log-tab">
-      {/* 모드 선택 */}
-      <div className="log-mode-selector">
-        <button
-          type="button"
-          className={`log-mode-btn ${mode === 'file' ? 'active' : ''}`}
-          onClick={() => setMode('file')}
-        >
-          파일 경로
-        </button>
-        <button
-          type="button"
-          className={`log-mode-btn ${mode === 'command' ? 'active' : ''}`}
-          onClick={() => setMode('command')}
-        >
-          명령 실행
-        </button>
-      </div>
-
-      {/* 파일 모드 폼 */}
-      {mode === 'file' && (
-        <div className="log-form log-form-file">
-          <div className="log-form-row">
-            <input
-              type="text"
-              className="log-path-input"
-              value={filePath}
-              onChange={e => setFilePath(e.target.value)}
-              placeholder="/var/log/syslog"
-            />
-            <LogPresetSelect currentPath={filePath} onSelect={setFilePath} />
-            <button
-              type="button"
-              className="log-btn"
-              onClick={handleCheckFile}
-              disabled={!filePath.trim()}
-            >
-              파일 확인
-            </button>
-          </div>
-
-          {hook.statInfo && (
-            <div className="log-stat-info">
-              {hook.statInfo.exists ? (
-                <>
-                  크기: <strong>{formatBytes(hook.statInfo.size)}</strong>
-                  &nbsp;|&nbsp; 수정: {formatDate(hook.statInfo.lastWriteUtc)}
-                </>
-              ) : (
-                <span className="log-error-inline">파일 없음</span>
-              )}
-            </div>
-          )}
-
-          <div className="log-form-row">
-            <label className="log-slider-label">
-              tail 크기: <strong>{formatBytes(tailBytes)}</strong>
-            </label>
-            <input
-              type="range"
-              min={64 * 1024}
-              max={2 * 1024 * 1024}
-              step={64 * 1024}
-              value={tailBytes}
-              onChange={e => setTailBytes(parseInt(e.target.value, 10))}
-              disabled={fullFile}
-            />
-            <label className="log-checkbox-label">
-              <input
-                type="checkbox"
-                checked={fullFile}
-                onChange={e => setFullFile(e.target.checked)}
-              />
-              전체 읽기
-            </label>
-          </div>
-        </div>
-      )}
-
-      {/* 명령 모드 폼 */}
-      {mode === 'command' && (
-        <div className="log-form log-form-command">
-          <div className="log-form-row">
-            <select
-              className="log-template-select"
-              onChange={handleTemplateSelect}
-              defaultValue=""
-            >
-              <option value="" disabled>템플릿 선택...</option>
-              {COMMAND_TEMPLATES.map((t, i) => (
-                <option key={t.label} value={i}>{t.label}</option>
-              ))}
-            </select>
-          </div>
-          <textarea
-            className="log-command-input"
-            value={command}
-            onChange={e => setCommand(e.target.value)}
-            placeholder="tail -n 200 /var/log/syslog"
-            rows={3}
+      {/* ─── 파일 경로 ────────────────────────────────────────── */}
+      <div className="log-form">
+        <label className="log-section-label">로그 파일 경로</label>
+        <div className="log-form-row">
+          <input
+            type="text"
+            className="log-path-input"
+            value={filePath}
+            onChange={e => setFilePath(e.target.value)}
+            placeholder="/var/log/syslog"
           />
-          {PLACEHOLDER_PATTERN.test(command) && (
-            <div className="log-warning-inline">
-              ⚠ placeholder({'{path}, {N}, {unit}, {keyword}'})를 실제 값으로 바꾸세요.
-            </div>
-          )}
+          <LogPresetSelect currentPath={filePath} onSelect={setFilePath} />
         </div>
-      )}
-
-      {/* 수집 버튼 */}
-      <div className="log-action-row">
-        <button
-          type="button"
-          className="log-btn log-btn-primary"
-          onClick={handleFetch}
-          disabled={hook.isFetching || (mode === 'file' ? !filePath.trim() : !command.trim())}
-        >
-          {hook.isFetching ? '수집 중...' : '로그 수집'}
-        </button>
       </div>
 
-      {/* 수집 결과 배너 */}
-      {hook.payload && (
-        <div className="log-collected-banner">
-          <div className="log-collected-summary">
-            수집: <strong>{hook.payload.source}</strong>
-            &nbsp;|&nbsp; {formatBytes(hook.payload.sizeBytes)}
-            &nbsp;|&nbsp; {hook.payload.lineCount.toLocaleString()} 줄
-            &nbsp;
+      {/* ─── 5개 모드 버튼 ───────────────────────────────────── */}
+      <div className="log-form">
+        <div className="log-mode-grid">
+          {MODES.map(m => (
             <button
+              key={m}
               type="button"
-              className="log-link-btn"
-              onClick={() => setIsPreviewOpen(v => !v)}
+              className={`log-mode-tab ${activeMode === m ? 'active' : ''}`}
+              onClick={() => setActiveMode(m)}
             >
-              {isPreviewOpen ? '미리보기 닫기' : '미리보기 펼치기'}
+              {modeLabel(m)}
             </button>
-          </div>
-          {isPreviewOpen && (
-            <pre className="log-preview">{previewText}
-{hook.payload.content.length > previewText.length && '\n... (이하 생략)'}
-            </pre>
-          )}
+          ))}
         </div>
-      )}
 
-      {/* 예산 배너 */}
+        {/* 모드별 입력 폼 — 활성 모드만 펼침 */}
+        {activeMode === 'search' && (
+          <div className="log-mode-inputs">
+            <div className="log-form-row">
+              <input
+                type="text"
+                className="log-pattern-input"
+                value={pattern}
+                onChange={e => setPattern(e.target.value)}
+                placeholder='예: "OutOfMemory" 또는 "ERROR|FATAL"'
+              />
+            </div>
+            <div className="log-form-row">
+              <label className="log-checkbox-label">
+                <input type="checkbox" checked={ignoreCase} onChange={e => setIgnoreCase(e.target.checked)} />
+                대소문자 무시
+              </label>
+              <label className="log-time-label">앞 컨텍스트 (-B):</label>
+              <input
+                type="number" min={0} max={50} value={ctxBefore}
+                onChange={e => setCtxBefore(parseInt(e.target.value, 10) || 0)}
+                style={{ width: '4em' }}
+              />
+              <label className="log-time-label">뒤 컨텍스트 (-A):</label>
+              <input
+                type="number" min={0} max={50} value={ctxAfter}
+                onChange={e => setCtxAfter(parseInt(e.target.value, 10) || 0)}
+                style={{ width: '4em' }}
+              />
+            </div>
+          </div>
+        )}
+
+        {activeMode === 'recent' && (
+          <div className="log-mode-inputs">
+            <div className="log-form-row">
+              <label className="log-time-label">최근</label>
+              <input
+                type="number" min={1} max={720} value={hours}
+                onChange={e => setHours(parseInt(e.target.value, 10) || 1)}
+                style={{ width: '5em' }}
+              />
+              <span>시간 (1~720, 기본 1)</span>
+            </div>
+          </div>
+        )}
+
+        {activeMode === 'range' && (
+          <div className="log-mode-inputs">
+            <div className="log-form-row">
+              <label className="log-time-label">FROM:</label>
+              <input type="datetime-local" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)} />
+            </div>
+            <div className="log-form-row">
+              <label className="log-time-label">TO:</label>
+              <input type="datetime-local" value={rangeTo} onChange={e => setRangeTo(e.target.value)} />
+            </div>
+          </div>
+        )}
+
+        {activeMode === 'top' && (
+          <div className="log-mode-inputs">
+            <div className="log-form-row">
+              <label className="log-time-label">상위</label>
+              <input
+                type="number" min={1} max={100} value={topN}
+                onChange={e => setTopN(parseInt(e.target.value, 10) || 10)}
+                style={{ width: '5em' }}
+              />
+              <span>개 (1~100, 기본 10)</span>
+            </div>
+          </div>
+        )}
+
+        <div className="log-action-row">
+          <button
+            type="button"
+            className="log-btn log-btn-primary"
+            onClick={handleRun}
+            disabled={hook.isFetching || hook.isStreaming || !filePath.trim()}
+          >
+            {hook.isFetching ? '실행 중...' : '실행'}
+          </button>
+        </div>
+      </div>
+
+      {/* ─── 컨텍스트 크기 배너 ─────────────────────────────── */}
       {budgetCheck && (
         <div className={`log-budget-banner ${budgetBannerClass}`}>
           {budgetCheck.status === 'ok' && (
             <span>
-              ✓ 현재 모델: <strong>{provider} / {currentModel}</strong> (예산 {formatBytes(budgetCheck.budget)})
+              ✓ 현재 모델: <strong>{provider} / {currentModel}</strong> (컨텍스트 크기 {formatBytes(budgetCheck.budget)})
             </span>
           )}
           {budgetCheck.status === 'warn' && (
             <>
               <span>
-                ⚠ <strong>{provider} / {currentModel}</strong> 예산 {formatBytes(budgetCheck.budget)} — {budgetCheck.ratio.toFixed(1)}배 초과
+                ⚠ <strong>{provider} / {currentModel}</strong> 컨텍스트 크기 {formatBytes(budgetCheck.budget)} — {budgetCheck.ratio.toFixed(1)}배 초과
               </span>
               <button type="button" className="log-link-btn" onClick={handleOpenBudgetModal}>옵션 열기</button>
             </>
@@ -363,7 +386,7 @@ export function LogTab({ provider, model, availableModels, onModelChanged }: Log
           {budgetCheck.status === 'reject' && (
             <>
               <span>
-                ⛔ 너무 큽니다. 분할 필수 — {budgetCheck.ratio.toFixed(1)}배 초과
+                ⛔ 컨텍스트 크기 초과 — {budgetCheck.ratio.toFixed(1)}배. 분할 분석 필수
               </span>
               <button type="button" className="log-link-btn" onClick={handleOpenBudgetModal}>옵션 열기</button>
             </>
@@ -371,7 +394,7 @@ export function LogTab({ provider, model, availableModels, onModelChanged }: Log
         </div>
       )}
 
-      {/* 예산 모달 */}
+      {/* ─── 컨텍스트 모달 ─────────────────────────────────── */}
       {isBudgetModalOpen && budgetCheck && (
         <LogBudgetModal
           budgetCheck={budgetCheck}
@@ -385,20 +408,18 @@ export function LogTab({ provider, model, availableModels, onModelChanged }: Log
         />
       )}
 
-      {/* 에러 배너 — UI-local 검증 오류 우선, 없으면 훅에서 올라온 오류 */}
+      {/* ─── 에러 배너 ─────────────────────────────────────── */}
       {(localError || hook.error) && (
-        <div className="log-error-banner">
-          {localError || hook.error}
-        </div>
+        <div className="log-error-banner">{localError || hook.error}</div>
       )}
 
-      {/* 질문 입력 + 분석 버튼 */}
+      {/* ─── 질문 + AI 분석 ────────────────────────────────── */}
       <div className="log-question-row">
         <textarea
           className="log-question-input"
           value={question}
           onChange={e => setQuestion(e.target.value)}
-          placeholder="무엇을 확인하고 싶으세요? (예: 최근 에러의 공통 원인, 특정 서비스 실패 여부)"
+          placeholder="logcheck 결과를 기반으로 AI에게 물을 질문 (선택)"
           rows={2}
         />
         <div className="log-question-buttons">
@@ -406,30 +427,60 @@ export function LogTab({ provider, model, availableModels, onModelChanged }: Log
             type="button"
             className="log-btn log-btn-primary"
             onClick={handleAnalyze}
-            disabled={
-              !hook.payload ||
-              hook.isStreaming ||
-              budgetCheck?.status === 'reject'
-            }
+            disabled={!hook.payload || hook.isStreaming || hook.isFetching || budgetCheck?.status === 'reject'}
           >
             {hook.isStreaming ? '분석 중...' : 'AI 분석'}
           </button>
-          {hook.isStreaming && (
-            <button
-              type="button"
-              className="log-btn log-btn-cancel"
-              onClick={handleCancel}
-            >
-              취소
-            </button>
+          {(hook.isStreaming || hook.isFetching) && (
+            <button type="button" className="log-btn log-btn-cancel" onClick={handleCancel}>취소</button>
           )}
         </div>
       </div>
 
-      {/* 결과 패널 */}
-      {(hook.result || hook.isStreaming) && (
+      {/* ─── 결과 패널 (최하단) ─────────────────────────────── */}
+      {showResultPanel && (
         <div className="log-result-panel">
-          {hook.chunkProgress && (
+          <div className="log-result-toolbar">
+            {hasShellOutput && hasAiOutput && (
+              <div className="log-result-tabs">
+                <button
+                  type="button"
+                  className={`log-result-tab ${viewMode === 'shell' ? 'active' : ''}`}
+                  onClick={() => setViewMode('shell')}
+                >
+                  셸 출력
+                </button>
+                <button
+                  type="button"
+                  className={`log-result-tab ${viewMode === 'ai' ? 'active' : ''}`}
+                  onClick={() => setViewMode('ai')}
+                >
+                  AI 응답
+                </button>
+              </div>
+            )}
+            <div className="log-result-toolbar-spacer" />
+            <button
+              type="button"
+              className="log-btn log-btn-tool"
+              onClick={handleCopyResult}
+              disabled={!hook.payload || hook.isStreaming || hook.isFetching}
+              title="결과를 클립보드로 복사 (메타 헤더 포함)"
+            >
+              {copyState === 'done' ? '✓ 복사됨' : '📋 복사'}
+            </button>
+            <button
+              type="button"
+              className="log-btn log-btn-tool"
+              onClick={handleDownloadResult}
+              disabled={!hook.payload || hook.isStreaming || hook.isFetching}
+              title=".md 파일로 저장 (메타 헤더 포함)"
+            >
+              💾 .md 저장
+            </button>
+          </div>
+
+          {hook.chunkProgress && viewMode === 'ai' && (
             <div className="log-progress">
               <strong>Part {hook.chunkProgress.index + 1}/{hook.chunkProgress.total}</strong>
               &nbsp;({formatBytes(hook.chunkProgress.bytes)})
@@ -441,12 +492,29 @@ export function LogTab({ provider, model, availableModels, onModelChanged }: Log
               </div>
             </div>
           )}
+
           <div className="log-result-content">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {hook.result || ' '}
-            </ReactMarkdown>
-            {hook.isStreaming && <span className="streaming-cursor" />}
+            {viewMode === 'shell' ? (
+              hook.payload ? (
+                <pre className="log-result-codeblock log-result-shell">{hook.payload.content}</pre>
+              ) : (
+                <span className="log-result-placeholder">실행 중...</span>
+              )
+            ) : (
+              <>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {hook.result || ' '}
+                </ReactMarkdown>
+                {hook.isStreaming && <span className="streaming-cursor" />}
+              </>
+            )}
           </div>
+
+          {hook.payload && viewMode === 'shell' && (
+            <div className="log-result-meta">
+              {hook.payload.source} · {formatBytes(hook.payload.sizeBytes)} · {hook.payload.lineCount.toLocaleString()} 줄
+            </div>
+          )}
         </div>
       )}
     </div>

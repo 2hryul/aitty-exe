@@ -27,6 +27,7 @@ public class IpcHandler
     private readonly SessionService _sessionService;
     private readonly AiPresetStore _presetStore = new();
     private readonly LogCollectorService _logCollector;
+    private readonly LogCheckService _logCheck;
     private readonly SessionData? _restoredSession;
     private readonly SshConnection? _startupConnection;
     private CancellationTokenSource? _streamingCts;
@@ -53,6 +54,7 @@ public class IpcHandler
         _aiManager = aiManager;
         _sessionService = sessionService;
         _logCollector = new LogCollectorService(sshService);
+        _logCheck = new LogCheckService(sshService);
         _restoredSession = restoredSession;
         _startupConnection = startupConnection;
     }
@@ -173,6 +175,7 @@ public class IpcHandler
             "logs:stat-file"           => await HandleLogsStatFile(msg.Payload),
             "logs:fetch-file"          => await HandleLogsFetchFile(msg.Payload),
             "logs:fetch-exec"          => await HandleLogsFetchExec(msg.Payload),
+            "logs:check"               => await HandleLogsCheck(msg.Payload),
             "logs:evaluate"            => HandleLogsEvaluate(msg.Payload),
             "logs:analyze"             => await HandleLogsAnalyze(msg),
             "logs:analyze-chunked"     => await HandleLogsAnalyzeChunked(msg),
@@ -999,7 +1002,28 @@ public class IpcHandler
         if (data.Command.Length > 8192)
             throw new ArgumentException("Command too long (max 8192 chars)");
 
-        var result = await _logCollector.FetchExecAsync(data.Command);
+        // ai:stream:cancel과 동일 CTS 공유 — 사용자가 fetch 도중 취소 누르면 원격 명령도 중단
+        var ct = _streamingCts?.Token ?? default;
+        var result = await _logCollector.FetchExecAsync(data.Command, ct);
+        _ = SshAuditLogger.LogFetchAsync(result.Source, result.SizeBytes);
+
+        return ToWireLogPayload(result);
+    }
+
+    /// <summary>
+    /// 임베디드 logcheck.sh를 base64로 stdin 전달해 원격에서 실행. 5개 모드(summary/search/recent/range/top).
+    /// 결과는 LogPayload로 래핑되어 분석 파이프라인 재사용.
+    /// </summary>
+    private async Task<object> HandleLogsCheck(object? payload)
+    {
+        var data = DeserializePayload<LogCheckPayload>(payload);
+
+        // 새 CTS 발행 — fetchExec와 동일 패턴. cancel 버튼이 원격 logcheck도 중단시킬 수 있도록.
+        _streamingCts?.Dispose();
+        _streamingCts = new CancellationTokenSource();
+        var ct = _streamingCts.Token;
+
+        var result = await _logCheck.CheckAsync(data, ct);
         _ = SshAuditLogger.LogFetchAsync(result.Source, result.SizeBytes);
 
         return ToWireLogPayload(result);
@@ -1031,13 +1055,20 @@ public class IpcHandler
         if (string.IsNullOrEmpty(data.Content))
             return new { content = string.Empty };
 
+        ValidateLogAnalyzeOptions(data);
+
         // ai:stream:cancel 과 동일한 CTS를 공유 — 사용자가 Chat과 Log 분석 중 어느 쪽이든 취소 버튼 하나로 중단
         _streamingCts?.Dispose();
         _streamingCts = new CancellationTokenSource();
 
-        var prompt = $"{data.Source ?? "log"}:\n{data.Content}";
+        var question = string.IsNullOrWhiteSpace(data.Question) ? null : data.Question.Trim();
+        var prompt = question is null
+            ? $"{data.Source ?? "log"}:\n{data.Content}"
+            : $"{data.Source ?? "log"}:\n{data.Content}\n\n[사용자 관심사]\n{question}";
 
-        var response = await RunLogAnalysisAsync(msg.Id, "logs:analyze:chunk", prompt, LogAnalyzeSystem, _streamingCts.Token);
+        var system = ResolveSystemPrompt(LogAnalyzeSystem, data);
+
+        var response = await RunLogAnalysisAsync(msg.Id, "logs:analyze:chunk", prompt, system, _streamingCts.Token);
 
         _ = SshAuditLogger.LogAnalyzeAsync(
             _aiManager.ActiveProvider, response.Model, 1,
@@ -1058,6 +1089,8 @@ public class IpcHandler
         if (string.IsNullOrEmpty(data.Content))
             return new { content = string.Empty };
 
+        ValidateLogAnalyzeOptions(data);
+
         // ai:stream:cancel 과 동일한 CTS — 청크 간격에서 취소 감지 후 루프 조기 종료
         _streamingCts?.Dispose();
         _streamingCts = new CancellationTokenSource();
@@ -1068,6 +1101,9 @@ public class IpcHandler
         var budget   = AiBudget.For(provider, model);
         var chunkBytes = Math.Max(1, (int)(budget * 0.8));
         var summaryBytes = Math.Max(1, (int)(budget * 0.1));
+
+        var question = string.IsNullOrWhiteSpace(data.Question) ? null : data.Question.Trim();
+        var resolvedBaseSystem = ResolveSystemPrompt(LogAnalyzeSystem, data);
 
         var chunks = AiBudget.Split(data.Content, chunkBytes).ToList();
         var totalBytes = Encoding.UTF8.GetByteCount(data.Content);
@@ -1096,8 +1132,9 @@ public class IpcHandler
                 ? string.Empty
                 : "\n\n[이전 청크 요약]\n" + TakeBytes(string.Join("\n---\n", partResults), summaryBytes);
 
-            var system = LogAnalyzeSystem + appendix;
-            var prompt = $"{data.Source ?? "log"} [chunk {chunk.Index + 1}/{chunk.Total}, lines {chunk.StartLine}-{chunk.EndLine}]:\n{chunk.Content}";
+            var system = resolvedBaseSystem + appendix;
+            var basePrompt = $"{data.Source ?? "log"} [chunk {chunk.Index + 1}/{chunk.Total}, lines {chunk.StartLine}-{chunk.EndLine}]:\n{chunk.Content}";
+            var prompt = question is null ? basePrompt : basePrompt + "\n\n[사용자 관심사]\n" + question;
 
             var response = await RunLogAnalysisAsync(msg.Id, "logs:analyze:chunk", prompt, system, ct);
             partResults.Add(response.Content);
@@ -1116,6 +1153,39 @@ public class IpcHandler
         _ = AiChatLogger.AppendAsync(provider, finalResp.Model, null, finalPrompt, finalResp);
 
         return new { content = finalResp.Content, chunks = chunks.Count };
+    }
+
+    /// <summary>
+    /// LogAnalyzePayload의 question/시스템 프롬프트 옵션 검증.
+    /// 8KB / 4KB 상한 — 모델 입력 토큰 예산 침식 방지.
+    /// </summary>
+    private static void ValidateLogAnalyzeOptions(LogAnalyzePayload data)
+    {
+        if (!string.IsNullOrEmpty(data.Question)
+            && Encoding.UTF8.GetByteCount(data.Question) > 4096)
+            throw new InvalidOperationException("질문은 4KB 이내여야 합니다");
+
+        if (!string.IsNullOrEmpty(data.SystemPromptOverride)
+            && Encoding.UTF8.GetByteCount(data.SystemPromptOverride) > 8192)
+            throw new InvalidOperationException("시스템 프롬프트는 8KB 이내여야 합니다");
+    }
+
+    /// <summary>
+    /// 시스템 프롬프트 합성 — default(기본만) / merge(기본+추가) / override(완전 대체).
+    /// 종합 요약 단계엔 호출하지 말 것 (구조적 단계라 사용자 지시 주입 부적절).
+    /// </summary>
+    private static string ResolveSystemPrompt(string baseSystem, LogAnalyzePayload data)
+    {
+        var ext = data.SystemPromptOverride?.Trim();
+        var mode = data.SystemPromptMode?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(ext) || mode == "default" || string.IsNullOrEmpty(mode))
+            return baseSystem;
+        return mode switch
+        {
+            "override" => ext,
+            "merge"    => baseSystem + "\n\n[추가 지시]\n" + ext,
+            _          => baseSystem,
+        };
     }
 
     /// <summary>
@@ -1270,6 +1340,9 @@ internal class LogEvaluatePayload
 }
 internal class LogAnalyzePayload
 {
-    public string? Source   { get; set; }
-    public string  Content  { get; set; } = string.Empty;
+    public string? Source                { get; set; }
+    public string  Content               { get; set; } = string.Empty;
+    public string? Question              { get; set; }
+    public string? SystemPromptMode      { get; set; }   // "default" | "merge" | "override"
+    public string? SystemPromptOverride  { get; set; }
 }

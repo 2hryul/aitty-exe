@@ -66,6 +66,11 @@ public class OpenAiService : IAiService
     public IReadOnlyList<AiChatMessage> History => _history.AsReadOnly();
     public string CurrentBaseUrl => _baseUrl;
 
+    // ── IAiService 디폴트 노출 (SoT) ──────────────────────── //
+    public string DefaultModel => "gpt-4o-mini";
+    public string? DefaultSystemPrompt => null;
+    public string BaseUrl => _baseUrl;
+
     public OpenAiService() { }
 
     public void SetApiKey(string apiKey)

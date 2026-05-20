@@ -26,7 +26,7 @@ public class GeminiService : IAiService
     private readonly List<AiChatMessage> _history = new();
     private readonly object _historyLock = new();
 
-    private const string BaseUrl = "https://generativelanguage.googleapis.com/v1beta";
+    private const string DefaultBaseUrl = "https://generativelanguage.googleapis.com/v1beta";
 
     // 429 재시도: 최대 3회, 대기 시간 5s → 30s → 60s
     private const int MaxRetries = 3;
@@ -56,6 +56,11 @@ public class GeminiService : IAiService
     public string? SystemPrompt => _systemPrompt;
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
     public IReadOnlyList<AiChatMessage> History => _history.AsReadOnly();
+
+    // ── IAiService 디폴트 노출 (SoT) ──────────────────────── //
+    public string DefaultModel => "gemini-2.0-flash";
+    public string? DefaultSystemPrompt => null;
+    public string BaseUrl => DefaultBaseUrl;
 
     public void SetApiKey(string apiKey)
     {

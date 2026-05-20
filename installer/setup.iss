@@ -1,17 +1,18 @@
 ; =============================================================================
-;  Aitty SSH Terminal - Inno Setup Script v0.3.0
+;  Aitty SSH Terminal - Inno Setup Script v0.4.0
 ;  Compile: ISCC.exe setup.iss
 ;
-;  변경사항 (v0.3.0):
-;    - WebView2 Runtime 전체 번들 (오프라인 설치 지원, 186MB)
-;    - 구형 WebView2 Runtime(v117 미만) 자동 업그레이드
-;    - WebView2 InvalidCastException 내성 (MainWindow.xaml.cs)
-;    - PuTTY 호환 CLI 인자 지원 (HiWare 연동)
-;    - OpenAI 호환 커스텀 엔드포인트 (Shinhan Hands API Gateway)
+;  변경사항 (v0.4.0 — Log 탭 logcheck.sh 기반 전면 개편):
+;    - logcheck.sh 5개 모드 액션 버튼 (요약 / 패턴 검색 / 최근 N시간 / 기간 / 빈출 패턴)
+;    - 스크립트 앱 내장 — 매 호출마다 base64 → bash -s로 stdin 전달, 원격 사전 설치 불필요
+;    - 셸 출력 즉시 표시 + AI 분석은 별도 버튼으로 분리
+;    - 결과 패널 최하단 배치, 셸/AI 응답 토글
+;    - "예산" 라벨 → "컨텍스트 크기"로 일괄 교체
+;    - 시간 범위 위저드 / 시스템 프롬프트 옵션 / 모드 토글 / 로그 수집 버튼 제거
 ; =============================================================================
 
 #define AppName      "Aitty SSH Terminal"
-#define AppVersion   "0.3.0"
+#define AppVersion   "0.4.0"
 #define AppPublisher "Shinhan DS AX"
 #define AppExeName   "Aitty.exe"
 #define AppId        "{{8A3F2E1B-4C5D-4E6F-9A0B-1C2D3E4F5A6B}"

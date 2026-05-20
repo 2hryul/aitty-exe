@@ -107,13 +107,36 @@ public class AiServiceManager : IDisposable
         _ => "unknown"
     };
 
-    /// <summary>지원 제공자 목록과 상태. OpenAI/Ollama는 endpoint 필드 포함(UI에서 현재값 표시용).</summary>
+    /// <summary>
+    /// 지원 제공자 목록과 상태. 모든 provider에 endpoint/defaultModel/defaultSystemPrompt 포함 (디폴트값 SoT).
+    /// 프론트엔드는 이 응답으로 초기 모델/시스템 프롬프트/엔드포인트를 채움.
+    /// </summary>
     public object[] GetProviders() =>
     [
-        new { id = "ollama", name = "API 접속",           status = GetProviderStatus("ollama"), requiresApiKey = false, endpoint = _ollamaService.CurrentBaseUrl },
-        new { id = "gemini", name = "Google Gemini",    status = GetProviderStatus("gemini"), requiresApiKey = true,  endpoint = (string?)null },
-        new { id = "claude", name = "Anthropic Claude", status = GetProviderStatus("claude"), requiresApiKey = true,  endpoint = (string?)null },
-        new { id = "openai", name = "OpenAI",           status = GetProviderStatus("openai"), requiresApiKey = true,  endpoint = _openAiService.CurrentBaseUrl },
+        new {
+            id = "ollama", name = "API 접속", status = GetProviderStatus("ollama"), requiresApiKey = false,
+            endpoint = _ollamaService.BaseUrl,
+            defaultModel = _ollamaService.DefaultModel,
+            defaultSystemPrompt = _ollamaService.DefaultSystemPrompt,
+        },
+        new {
+            id = "gemini", name = "Google Gemini", status = GetProviderStatus("gemini"), requiresApiKey = true,
+            endpoint = _geminiService.BaseUrl,
+            defaultModel = _geminiService.DefaultModel,
+            defaultSystemPrompt = _geminiService.DefaultSystemPrompt,
+        },
+        new {
+            id = "claude", name = "Anthropic Claude", status = GetProviderStatus("claude"), requiresApiKey = true,
+            endpoint = _claudeService.BaseUrl,
+            defaultModel = _claudeService.DefaultModel,
+            defaultSystemPrompt = _claudeService.DefaultSystemPrompt,
+        },
+        new {
+            id = "openai", name = "OpenAI", status = GetProviderStatus("openai"), requiresApiKey = true,
+            endpoint = _openAiService.BaseUrl,
+            defaultModel = _openAiService.DefaultModel,
+            defaultSystemPrompt = _openAiService.DefaultSystemPrompt,
+        },
     ];
 
     // ── 세션 저장/복원 ──────────────────────────────────────── //

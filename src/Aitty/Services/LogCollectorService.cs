@@ -95,8 +95,8 @@ public class LogCollectorService
         if (CommandSafetyService.IsDangerous(command))
             throw new InvalidOperationException($"Command blocked by safety policy: {command}");
 
-        // SshService.ExecuteAsync 내부에서 연결 검증 + Task.Run 수행
-        var output = await _sshService.ExecuteAsync(command);
+        // SshService.ExecuteAsync 내부에서 연결 검증 + Task.Run 수행 — CT 전달로 ai:stream:cancel 시 원격 명령도 취소
+        var output = await _sshService.ExecuteAsync(command, ct);
         return BuildPayload($"exec: {command}", output);
     }
 

@@ -161,7 +161,13 @@ public class SshService : IDisposable
         _state.IsConnected = false;
     }
 
-    public async Task<string> ExecuteAsync(string command)
+    public Task<string> ExecuteAsync(string command) => ExecuteAsync(command, default);
+
+    /// <summary>
+    /// 명령 실행 + CancellationToken 지원.
+    /// CT 발화 시 SshCommand.CancelAsync로 원격 명령 중단 시도 (SSH.NET 2025+).
+    /// </summary>
+    public async Task<string> ExecuteAsync(string command, CancellationToken ct)
     {
         if (_client is not { IsConnected: true })
             throw new InvalidOperationException("SSH not connected");
@@ -170,12 +176,17 @@ public class SshService : IDisposable
         {
             using var cmd = _client.CreateCommand(command);
             cmd.CommandTimeout = TimeSpan.FromSeconds(60);
+            // CT 발화 → SshCommand 비동기 취소 시도. 예외 흡수 — Disconnect 등 강한 부수효과 금지.
+            // SSH.NET 2025.x의 SshCommand.CancelAsync()는 Task가 아닌 void 반환 — 할당 금지
+            using var reg = ct.Register(() => { try { cmd.CancelAsync(); } catch { } });
+            ct.ThrowIfCancellationRequested();
             var result = cmd.Execute();
+            ct.ThrowIfCancellationRequested();
             var output = !string.IsNullOrEmpty(cmd.Error) ? result + "\n" + cmd.Error : result;
             Remember(command);
             Remember(output);
             return output;
-        });
+        }, ct);
     }
 
     public async Task<bool> TestAsync()

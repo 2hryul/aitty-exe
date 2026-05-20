@@ -53,7 +53,7 @@ export function LogBudgetModal({
     <div className="log-budget-modal-backdrop" role="dialog" aria-modal="true">
       <div className="log-budget-modal">
         <header className="log-budget-modal-header">
-          <h3>{isReject ? '⛔ 예산 초과 (분할 필수)' : '⚠ 예산 경고'}</h3>
+          <h3>{isReject ? '⛔ 컨텍스트 크기 초과 (분할 필수)' : '⚠ 컨텍스트 크기 경고'}</h3>
           {canDismiss && (
             <button
               type="button"
@@ -72,7 +72,7 @@ export function LogBudgetModal({
               <strong>현재 모델</strong>: {currentProvider} / {currentModel}
             </div>
             <div>
-              <strong>예산</strong>: {formatBytes(budgetCheck.budget)}
+              <strong>컨텍스트 크기</strong>: {formatBytes(budgetCheck.budget)}
               &nbsp;|&nbsp;
               <strong>로그 크기</strong>: {formatBytes(budgetCheck.sizeBytes)}
               &nbsp;|&nbsp;

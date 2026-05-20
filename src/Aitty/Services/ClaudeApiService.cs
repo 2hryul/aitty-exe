@@ -11,10 +11,13 @@ namespace Aitty.Services;
 
 public class ClaudeApiService : IAiService
 {
-    private const string ApiUrl = "https://api.anthropic.com/v1/messages";
+    private const string DefaultBaseUrl = "https://api.anthropic.com";
+    private const string ApiUrl = DefaultBaseUrl + "/v1/messages";
+    private const string ModelsUrl = DefaultBaseUrl + "/v1/models";
     private const string ApiVersion = "2023-06-01";
-    private const string DefaultModel = "claude-sonnet-4-5-20250929";
+    private const string DefaultModelConst = "claude-sonnet-4-5-20250929";
 
+    // Fallback 모델 — 네트워크/API 응답 실패 시에만 사용. 실제 모델 목록은 GET /v1/models로 조회.
     private static readonly string[] KnownModels =
     [
         "claude-opus-4-6",
@@ -30,6 +33,11 @@ public class ClaudeApiService : IAiService
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
+    // 모델 목록 캐시 (10분) — GeminiService와 동일 패턴, 가용성 체크와 모델 조회를 동일 호출로 통합
+    private List<string>? _cachedModels;
+    private DateTime _modelsCachedAt = DateTime.MinValue;
+    private static readonly TimeSpan ModelCacheTtl = TimeSpan.FromMinutes(10);
+
     private HttpClient _httpClient = HttpClientHelper.Create(allowInsecureSsl: false, timeout: TimeSpan.FromMinutes(10));
 
     public void SetAllowInsecureSsl(bool allow)
@@ -43,7 +51,7 @@ public class ClaudeApiService : IAiService
     private readonly object _historyLock = new();
 
     private string _apiKey = string.Empty;
-    private string _model = DefaultModel;
+    private string _model = DefaultModelConst;
     private string? _systemPrompt;
     private int _maxTokens = 4096;
 
@@ -53,25 +61,125 @@ public class ClaudeApiService : IAiService
     public string? SystemPrompt => _systemPrompt;
     public IReadOnlyList<AiChatMessage> History => _conversationHistory.AsReadOnly();
 
-    public Task<bool> IsEngineAvailableAsync(CancellationToken ct = default)
-        => Task.FromResult(IsConfigured);
+    // ── IAiService 디폴트 노출 (SoT) ──────────────────────── //
+    public string DefaultModel => DefaultModelConst;
+    public string? DefaultSystemPrompt => null;
+    public string BaseUrl => DefaultBaseUrl;
 
-    public Task<List<string>> ListModelsAsync(CancellationToken ct = default)
-        => Task.FromResult(new List<string>(KnownModels));
+    /// <summary>
+    /// 실제 Anthropic API에 GET /v1/models 호출하여 가용성 확인.
+    /// - 네트워크 차단/SSL 오류/잘못된 API 키 모두 false 반환
+    /// - 단순 IsConfigured만 보면 잘못된 키나 오프라인에서도 true가 되어 사용자에게 거짓 성공 표시되는 문제 방지
+    /// </summary>
+    public async Task<bool> IsEngineAvailableAsync(CancellationToken ct = default)
+    {
+        if (!IsConfigured)
+        {
+            AiRequestLogger.LogInfo("[Claude] IsEngineAvailable: not configured (no API key)");
+            return false;
+        }
+
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, ModelsUrl);
+            req.Headers.Add("anthropic-version", ApiVersion);
+            req.Headers.Add("x-api-key", _apiKey);
+            AiRequestLogger.LogRequest(req, note: "Claude 가용성 확인용 GET /v1/models");
+
+            using var response = await _httpClient.SendAsync(req, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            sw.Stop();
+            AiRequestLogger.LogResponse(response, body, sw.ElapsedMilliseconds);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            AiRequestLogger.LogException("Claude.IsEngineAvailableAsync", ex, sw.ElapsedMilliseconds);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 실제 GET /v1/models 응답을 파싱하여 사용 가능 모델 목록 반환.
+    /// 10분 캐시. 네트워크 실패/응답 오류 시 KnownModels 정적 목록으로 폴백.
+    /// </summary>
+    public async Task<List<string>> ListModelsAsync(CancellationToken ct = default)
+    {
+        if (!IsConfigured) return new List<string>(KnownModels);
+
+        // 캐시 유효 시 API 호출 생략
+        if (_cachedModels != null && DateTime.UtcNow - _modelsCachedAt < ModelCacheTtl)
+            return new List<string>(_cachedModels);
+
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, ModelsUrl);
+            req.Headers.Add("anthropic-version", ApiVersion);
+            req.Headers.Add("x-api-key", _apiKey);
+            AiRequestLogger.LogRequest(req, note: "Claude 모델 목록 GET /v1/models");
+
+            using var response = await _httpClient.SendAsync(req, ct);
+            var json = await response.Content.ReadAsStringAsync(ct);
+            sw.Stop();
+            AiRequestLogger.LogResponse(response, json, sw.ElapsedMilliseconds);
+
+            if (!response.IsSuccessStatusCode)
+                return _cachedModels is not null ? new List<string>(_cachedModels) : new List<string>(KnownModels);
+
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("data", out var data))
+                return new List<string>(KnownModels);
+
+            var models = data.EnumerateArray()
+                .Select(m => m.TryGetProperty("id", out var id) ? id.GetString() : null)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id!)
+                .OrderByDescending(id => id)
+                .ToList();
+
+            if (models.Count == 0) return new List<string>(KnownModels);
+
+            _cachedModels = models;
+            _modelsCachedAt = DateTime.UtcNow;
+            return new List<string>(models);
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            AiRequestLogger.LogException("Claude.ListModelsAsync", ex, sw.ElapsedMilliseconds);
+            return _cachedModels is not null ? new List<string>(_cachedModels) : new List<string>(KnownModels);
+        }
+    }
 
     public ClaudeApiService() { }
 
     public void Configure(AiConfig config)
     {
-        _apiKey = config.ApiKey;
+        var keyChanged = !string.Equals(_apiKey, config.ApiKey ?? string.Empty, StringComparison.Ordinal);
+        _apiKey = config.ApiKey ?? string.Empty;
         _model = string.IsNullOrEmpty(config.Model) ? DefaultModel : config.Model;
         _systemPrompt = config.SystemPrompt;
         _maxTokens = config.MaxTokens > 0 ? config.MaxTokens : 4096;
+        if (keyChanged)
+        {
+            _cachedModels = null;
+            _modelsCachedAt = DateTime.MinValue;
+        }
     }
 
     public void SetApiKey(string apiKey)
     {
-        _apiKey = apiKey;
+        var changed = !string.Equals(_apiKey, apiKey ?? string.Empty, StringComparison.Ordinal);
+        _apiKey = apiKey ?? string.Empty;
+        if (changed)
+        {
+            // API 키가 바뀌면 다른 모델 권한일 수 있으므로 캐시 무효화
+            _cachedModels = null;
+            _modelsCachedAt = DateTime.MinValue;
+        }
     }
 
     public void SetModel(string model)
