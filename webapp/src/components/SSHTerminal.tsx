@@ -17,6 +17,11 @@ export interface SSHTerminalProps {
   onConnect?: () => void
   onDisconnect?: () => void
   autoConnect?: boolean
+  /**
+   * SSH cwd 추적 훅의 attach 함수 (Step F). xterm 생성 직후 1회 호출.
+   * 반환된 cleanup은 컴포넌트 unmount 시 호출. App.tsx의 useSshCwd 인스턴스가 source.
+   */
+  attachCwdTracker?: (term: Terminal) => () => void
 }
 
 const POLL_INTERVAL_MIN = 50      // ms — data present
@@ -27,7 +32,7 @@ const DEFAULT_SSH_HOST = import.meta.env.VITE_DEFAULT_SSH_HOST || ''
 const DEFAULT_SSH_PORT = import.meta.env.VITE_DEFAULT_SSH_PORT || '22'
 const DEFAULT_SSH_USERNAME = import.meta.env.VITE_DEFAULT_SSH_USERNAME || ''
 
-export function SSHTerminal({ connection, cliAutoConnect = false, onRequestConnect, onConnect, onDisconnect, autoConnect = false }: SSHTerminalProps) {
+export function SSHTerminal({ connection, cliAutoConnect = false, onRequestConnect, onConnect, onDisconnect, autoConnect = false, attachCwdTracker }: SSHTerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -46,6 +51,9 @@ export function SSHTerminal({ connection, cliAutoConnect = false, onRequestConne
 
   const { state: sshState, connect, disconnect, shellWrite, shellRead } = useSSHConnection()
   const shellWriteRef = useRef(shellWrite)
+  // attachCwdTracker는 prop으로 들어오므로 ref로 캡처 — xterm useEffect는 마운트 시 1회만 실행.
+  const attachCwdTrackerRef = useRef(attachCwdTracker)
+  useEffect(() => { attachCwdTrackerRef.current = attachCwdTracker }, [attachCwdTracker])
   const [showConnectForm, setShowConnectForm] = useState(true)
   const [availableKeys, setAvailableKeys] = useState<string[]>([])
   const [formData, setFormData] = useState({
@@ -256,6 +264,10 @@ export function SSHTerminal({ connection, cliAutoConnect = false, onRequestConne
     termRef.current = term
     fitAddonRef.current = fitAddon
 
+    // Step F — SSH cwd 추적 훅 어태치 (onData 라인 buffer + OSC 7 핸들러).
+    // 본 컴포넌트의 onData보다 먼저 등록되지만, 두 핸들러 모두 호출됨 (xterm.onData는 다중 구독 지원).
+    const detachCwdTracker = attachCwdTrackerRef.current?.(term)
+
     showBanner(term)
 
     // ── 위험 명령어 통제: 터미널 ANSI 경고 출력 ──
@@ -448,6 +460,7 @@ export function SSHTerminal({ connection, cliAutoConnect = false, onRequestConne
       containerEl?.removeEventListener('contextmenu', handleContextMenu)
       containerEl?.removeEventListener('click', handleClick)
       window.removeEventListener('ai-streaming-end', handleStreamingEnd)
+      detachCwdTracker?.()
       term.dispose()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps

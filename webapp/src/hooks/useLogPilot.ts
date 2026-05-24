@@ -70,8 +70,18 @@ export interface UseLogPilotArgs {
 
 export interface UseLogPilotReturn {
   // ── SSH 경로 ─────────────────────────────────
+  /**
+   * @deprecated Step F부터 App.tsx의 `useSshCwd` 훅이 SoT.
+   * LogPilotTab은 prop `sshCwd`를 우선 사용. 본 필드는 다음 step에서 제거 예정.
+   * (현재 코드 호환을 위해 보존 — `ssh.pwd()` exec 채널 응답이라 사용자 인터랙티브 cd 추적 불가)
+   */
   sshCwd: string | null
+  /**
+   * @deprecated Step F부터 App.tsx `useSshCwd.refreshCwd`가 SoT.
+   * 다음 step에서 제거 예정.
+   */
   refreshCwd: () => Promise<void>
+  /** @deprecated Step F부터 App.tsx `useSshCwd.isCwdLoading`가 SoT. */
   isCwdLoading: boolean
 
   // ── 시나리오 ────────────────────────────────

@@ -38,9 +38,23 @@ interface LogPilotTabProps {
   model: string
   availableModels: string[]
   sshConnected: boolean
+  /**
+   * Step F — App.tsx의 useSshCwd 훅에서 내려오는 cwd 값. 우선순위가 가장 높음.
+   * null이면 "(미연결 또는 확인 불가)" 표시. useLogPilot.sshCwd는 deprecated.
+   */
+  sshCwd?: string | null
+  isSshCwdLoading?: boolean
+  onRefreshSshCwd?: () => Promise<void>
 }
 
-export function LogPilotTab({ provider, model, sshConnected }: LogPilotTabProps) {
+export function LogPilotTab({
+  provider,
+  model,
+  sshConnected,
+  sshCwd: propSshCwd,
+  isSshCwdLoading,
+  onRefreshSshCwd,
+}: LogPilotTabProps) {
   const [filePath, setFilePath] = useState('')
   const [presetOpen, setPresetOpen] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
@@ -185,32 +199,54 @@ export function LogPilotTab({ provider, model, sshConnected }: LogPilotTabProps)
       <section className="logpilot-card">
         <div className="logpilot-card-header">
           <label className="logpilot-label">📁 분석할 로그 파일</label>
-          <div className="logpilot-cwd-row">
-            <span className="logpilot-cwd-label">SSH 현재 경로:</span>
-            {pilot.isCwdLoading ? (
-              <span className="logpilot-cwd-loading">확인 중...</span>
-            ) : pilot.sshCwd ? (
-              <button
-                type="button"
-                className="logpilot-cwd-btn mono"
-                title="클릭하면 입력란에 채워집니다"
-                onClick={() => setFilePath(pilot.sshCwd ?? '')}
-              >
-                📍 {pilot.sshCwd}
-              </button>
-            ) : (
-              <span className="logpilot-cwd-empty">— (미연결 또는 확인 불가)</span>
-            )}
-            <button
-              type="button"
-              className="logpilot-icon-btn"
-              onClick={() => pilot.refreshCwd()}
-              title="다시 가져오기"
-              disabled={!sshConnected || pilot.isCwdLoading}
-            >
-              🔄
-            </button>
-          </div>
+          {/* Step F — App.tsx의 useSshCwd 훅 prop 우선. 미주입 시 (browser/test 환경)에만 hook 폴백.
+              useLogPilot.sshCwd/refreshCwd는 deprecated이나 코드 보존 (다음 step에서 제거). */}
+          {(() => {
+            const cwdSource = propSshCwd !== undefined ? propSshCwd : pilot.sshCwd
+            const loading = isSshCwdLoading ?? pilot.isCwdLoading
+            const refresh = onRefreshSshCwd ?? pilot.refreshCwd
+            return (
+              <div className="logpilot-cwd-row">
+                <span className="logpilot-cwd-label">SSH 현재 경로:</span>
+                {loading ? (
+                  <span className="logpilot-cwd-loading">확인 중...</span>
+                ) : cwdSource ? (
+                  <button
+                    type="button"
+                    className="logpilot-cwd-btn mono"
+                    title="클릭하면 입력란에 채워집니다"
+                    onClick={() => setFilePath(cwdSource)}
+                  >
+                    📍 {cwdSource}
+                  </button>
+                ) : (
+                  <span className="logpilot-cwd-empty">— (미연결 또는 확인 불가)</span>
+                )}
+                <button
+                  type="button"
+                  className="logpilot-icon-btn"
+                  onClick={() => refresh()}
+                  title="다시 가져오기 (ssh.pwd로 강제 재동기화 — OSC 7 미감지 환경 대비)"
+                  disabled={!sshConnected || loading}
+                >
+                  🔄
+                </button>
+                {/* Step F DF-7 — 셸 설정 가이드 (OSC 7 활성화) tooltip */}
+                <span
+                  className="logpilot-cwd-info"
+                  title={
+                    '추적 한계: 방향키로 편집한 cd, history recall된 cd, 셸 함수/alias cd는 추적되지 않습니다 — 🔄로 강제 동기화하세요.\n\n' +
+                    '더 정확한 cwd 추적을 원하시면 서버 셸에 OSC 7을 활성화하세요:\n' +
+                    'bash: export PROMPT_COMMAND=\'printf "\\e]7;file://%s%s\\e\\\\" "$(hostname)" "$PWD"\'\n' +
+                    'zsh:  chpwd_functions+=(_osc7); _osc7() { printf "\\e]7;file://%s%s\\e\\\\" "$HOST" "$PWD" }'
+                  }
+                  aria-label="cwd 추적 한계 + OSC 7 활성화 가이드"
+                >
+                  ⓘ
+                </span>
+              </div>
+            )
+          })()}
         </div>
         <div className="logpilot-path-row">
           <input

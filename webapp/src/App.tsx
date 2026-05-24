@@ -5,6 +5,7 @@ import { SSHTerminal } from '@components/SSHTerminal'
 import { AITerminal } from '@components/AITerminal'
 import { TitleBar } from '@components/TitleBar'
 import { IconSidebar } from '@components/IconSidebar'
+import { useSshCwd } from '@hooks/useSshCwd'
 import type { AppConfig } from '@app-types/config'
 import type { SSHConnection } from '@app-types/ssh'
 import './App.css'
@@ -33,6 +34,10 @@ function App() {
 
   const layoutRef = useRef<HTMLDivElement>(null)
   const isDraggingRef = useRef(false)
+
+  // SSH 셸 cwd 추적 (Step F) — SSHTerminal에서 키 입력/OSC 7 가로채고
+  // AITerminal/LogPilotTab에 prop으로 표시값 전달. 양쪽이 동일 source.
+  const sshCwd = useSshCwd()
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -104,8 +109,16 @@ function App() {
     setSshConnection(conn)
   }, [])
 
-  const handleConnected = useCallback(() => setSshConnected(true), [])
-  const handleDisconnected = useCallback(() => setSshConnected(false), [])
+  const handleConnected = useCallback(() => {
+    setSshConnected(true)
+    // SSH 연결 직후 cwd 시드 — `ssh.pwd()` 1회 호출, 응답이 `/`로 시작하면 cwd 초기값.
+    sshCwd.onSshConnected().catch(() => { /* 시드 실패 — 훅 내부에서 로깅 */ })
+  }, [sshCwd])
+
+  const handleDisconnected = useCallback(() => {
+    setSshConnected(false)
+    sshCwd.onSshDisconnected()
+  }, [sshCwd])
 
   if (isLoading) {
     return (
@@ -134,6 +147,7 @@ function App() {
             onRequestConnect={handleSshConnect}
             onConnect={handleConnected}
             onDisconnect={handleDisconnected}
+            attachCwdTracker={sshCwd.attachToTerminal}
           />
         </div>
 
@@ -162,6 +176,9 @@ function App() {
               isSettingsOpen={isSettingsOpen}
               onCloseSettings={() => setIsSettingsOpen(false)}
               onStatusChange={setAiStatus}
+              sshCwd={sshCwd.sshCwd}
+              isSshCwdLoading={sshCwd.isCwdLoading}
+              onRefreshSshCwd={sshCwd.refreshCwd}
             />
           </div>
         </div>

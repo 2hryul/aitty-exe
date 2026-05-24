@@ -20,9 +20,24 @@ interface AITerminalProps {
   isSettingsOpen: boolean
   onCloseSettings: () => void
   onStatusChange?: (status: { model: string; configured: boolean; provider: string }) => void
+  /** Step F — App.tsx의 useSshCwd 훅에서 내려오는 cwd 값. null이면 미연결 또는 시드 실패. */
+  sshCwd?: string | null
+  /** Step F — cwd 새로고침 진행 중 표시용. */
+  isSshCwdLoading?: boolean
+  /** Step F — 🔄 버튼에서 호출 (OSC 7 미감지 환경 대비 수동 재동기화). */
+  onRefreshSshCwd?: () => Promise<void>
 }
 
-export function AITerminal({ sshConnected, activeTab, isSettingsOpen, onCloseSettings, onStatusChange }: AITerminalProps) {
+export function AITerminal({
+  sshConnected,
+  activeTab,
+  isSettingsOpen,
+  onCloseSettings,
+  onStatusChange,
+  sshCwd,
+  isSshCwdLoading,
+  onRefreshSshCwd,
+}: AITerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
@@ -343,6 +358,9 @@ export function AITerminal({ sshConnected, activeTab, isSettingsOpen, onCloseSet
             model={currentModel}
             availableModels={availableModels}
             sshConnected={!!sshConnected}
+            sshCwd={sshCwd ?? null}
+            isSshCwdLoading={!!isSshCwdLoading}
+            onRefreshSshCwd={onRefreshSshCwd}
           />
         </div>
       </div>
