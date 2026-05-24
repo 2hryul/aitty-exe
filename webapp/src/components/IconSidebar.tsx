@@ -1,6 +1,6 @@
 import '@styles/titlebar.css'
 
-type TabType = 'chat' | 'cli' | 'security' | 'log'
+type TabType = 'chat' | 'cli' | 'security' | 'logpilot'
 
 interface IconSidebarProps {
   activeTab: TabType
@@ -43,13 +43,13 @@ export function IconSidebar({ activeTab, onTabChange, onSettingsClick }: IconSid
       </button>
 
       <button
-        className={`sidebar-btn ${activeTab === 'log' ? 'active' : ''}`}
-        title="Log"
-        onClick={() => onTabChange('log')}
+        className={`sidebar-btn ${activeTab === 'logpilot' ? 'active' : ''}`}
+        title="LogPilot — 초보자도 쉽게 로그 분석"
+        onClick={() => onTabChange('logpilot')}
       >
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M4 6h16 M4 12h16 M4 18h10" />
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
         </svg>
       </button>
 

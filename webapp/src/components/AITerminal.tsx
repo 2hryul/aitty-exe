@@ -9,14 +9,14 @@ import { logger } from '@utils/logger'
 import { SettingsDrawer } from '@components/SettingsDrawer'
 import ChatPanel from '@components/ChatPanel'
 import SecurityPanel from '@components/SecurityPanel'
-import { LogTab } from '@components/LogTab'
+import { LogPilotTab } from '@components/LogPilotTab'
 import { PresetPasswordModal, type PresetPasswordMode } from '@components/PresetPasswordModal'
 import '@styles/chat.css'
 import '@styles/log-tab.css'
 
 interface AITerminalProps {
   sshConnected?: boolean
-  activeTab: 'chat' | 'cli' | 'security' | 'log'
+  activeTab: 'chat' | 'cli' | 'security' | 'logpilot'
   isSettingsOpen: boolean
   onCloseSettings: () => void
   onStatusChange?: (status: { model: string; configured: boolean; provider: string }) => void
@@ -336,12 +336,13 @@ export function AITerminal({ sshConnected, activeTab, isSettingsOpen, onCloseSet
           <SecurityPanel sshConnected={sshConnected} />
         </div>
 
-        {/* Log Tab */}
-        <div className={`tab-pane ${activeTab !== 'log' ? 'hidden' : ''}`}>
-          <LogTab
+        {/* LogPilot Tab — 초보 운영자용 로그 분석 (Log 탭 대체, Step C) */}
+        <div className={`tab-pane ${activeTab !== 'logpilot' ? 'hidden' : ''}`}>
+          <LogPilotTab
             provider={activeProvider}
             model={currentModel}
             availableModels={availableModels}
+            sshConnected={!!sshConnected}
           />
         </div>
       </div>

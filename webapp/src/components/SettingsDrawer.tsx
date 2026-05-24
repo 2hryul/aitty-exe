@@ -8,7 +8,8 @@ interface SettingsDrawerProps extends AISettingsPanelProps {
 }
 
 const STORAGE_KEY = 'aitty:settings-drawer-w'
-const DEFAULT_WIDTH = 384
+// 프리셋 행(select + 로드/🗑/저장 3버튼)이 초기 상태에서 잘리지 않도록 480px로 설정.
+const DEFAULT_WIDTH = 480
 const MIN_WIDTH = 280
 const MAX_WIDTH = 720
 

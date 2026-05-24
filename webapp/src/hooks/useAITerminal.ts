@@ -817,11 +817,16 @@ export function useAITerminal(): UseAITerminalReturn {
       if (isProcessingRef.current) term.write(chunk)
     }
 
+    // Chat 패널에 표시할 최종 상태 (catch/finally 사이 공유)
+    let chatErrorMessage: string | null = null
+    let chatEmptyNotice = false
+
     try {
       const response = await streamPromise
       term.writeln('')
-      if (!response.content.trim()) {
+      if (!response.content.trim() && !contentRef.current.trim()) {
         term.writeln('\x1b[33mNo content returned.\x1b[0m')
+        chatEmptyNotice = true
       }
       // 모델 자동 교정 감지: 백엔드가 API 키 제한으로 모델을 자동 변경한 경우 UI 동기화
       try {
@@ -843,6 +848,7 @@ export function useAITerminal(): UseAITerminalReturn {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error'
       term.writeln(`\r\n\x1b[31mError: ${errorMsg}\x1b[0m`)
+      chatErrorMessage = errorMsg
     } finally {
       // 대기 중 타이머 취소 후 최종 상태 1회 반영
       if (chatUpdateTimer !== null) {
@@ -851,8 +857,18 @@ export function useAITerminal(): UseAITerminalReturn {
       }
       isProcessingRef.current = false
       setIsStreaming(false)
+      // Chat 버블 최종 내용 결정:
+      // 1) 에러 발생 → 에러 메시지 표시 (사용자가 원인 인지 가능)
+      // 2) 응답이 완전히 비어 있음 → 안내 메시지 표시 (빈 버블 방지)
+      // 3) 정상 응답 → 누적된 contentRef.current 그대로
+      let finalContent = contentRef.current
+      if (chatErrorMessage) {
+        finalContent = `⚠️ **응답 실패**: ${chatErrorMessage}\n\n다시 시도하거나 다른 모델을 선택해 주세요.`
+      } else if (chatEmptyNotice && !finalContent.trim()) {
+        finalContent = '⚠️ **응답이 비어 있습니다.** 모델이 빈 답변을 반환했습니다. 질문을 다시 표현하거나 다른 모델을 선택해 주세요.'
+      }
       setChatMessages(prev => prev.map(m =>
-        m.id === assistantId ? { ...m, isStreaming: false, content: contentRef.current } : m
+        m.id === assistantId ? { ...m, isStreaming: false, content: finalContent } : m
       ))
       window.dispatchEvent(new CustomEvent('ai-streaming-end'))
     }

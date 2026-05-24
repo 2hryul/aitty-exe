@@ -46,7 +46,7 @@
 }
 .log-mode-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);   /* 실행 + 5개 모드 */
   gap: 4px;
   margin-bottom: 8px;
 }
@@ -66,6 +66,21 @@
   background: var(--accent-1);
   color: #fff;
   border-color: var(--accent-1);
+}
+/* 실행 버튼 — 모드 탭과 같은 행, primary 색상 유지 */
+.log-mode-tab-run {
+  background: var(--accent-1);
+  color: #fff;
+  border-color: var(--accent-1);
+  font-weight: 600;
+}
+.log-mode-tab-run:hover:not(:disabled) {
+  background: var(--accent-2, var(--accent-1));
+  filter: brightness(1.1);
+}
+.log-mode-tab-run:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .log-mode-inputs {
   padding: 8px;
@@ -155,6 +170,13 @@
 .log-command-input,
 .log-question-input {
   resize: vertical;
+}
+/* 질문 입력 — 2줄 기본, 사용자가 resize로 키울 수 있음 */
+.log-question-input {
+  min-height: 48px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .log-template-select,

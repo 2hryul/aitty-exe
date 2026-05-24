@@ -497,6 +497,9 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* position:relative — LogPilot tab의 absolute inset:0 컨테이너가 자리잡을 컨텍스트.
+     Chat/CLI/Security 등 다른 탭은 normal flow를 유지하므로 영향 없음. */
+  position: relative;
 }
 
 .tab-pane.hidden {

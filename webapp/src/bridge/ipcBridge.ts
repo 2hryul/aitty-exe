@@ -37,7 +37,10 @@ const STREAM_TIMEOUT = 120_000
 const CHUNKED_TIMEOUT = 20 * 60 * 1000
 
 function isWebView2(): boolean {
-  return !!window.chrome?.webview
+  // typeof window 가드 — vitest 기본 환경(node)에서 window 미정의 시 ReferenceError 방지.
+  // 순수 함수 단위 테스트(parseCheckReadableOutput 등)가 ipcBridge 모듈 import 시 module-level init()이
+  // window를 참조하지 못해 깨지는 문제 회피.
+  return typeof window !== 'undefined' && !!window.chrome?.webview
 }
 
 function init() {
@@ -100,16 +103,130 @@ export function invoke<T = unknown>(type: string, payload: Record<string, unknow
   })
 }
 
+/**
+ * Bash 단일따옴표(`'`) escape — `'` → `'\''` 분할 패턴.
+ * 사용자 입력 path를 안전하게 'path'로 wrap하기 위한 helper.
+ * 예: /tmp/it's.log → 'it'\''s.log' 형태로 정확히 단일 인자로 전달됨.
+ */
+export function shellQuoteSingle(input: string): string {
+  return `'${input.replace(/'/g, `'\\''`)}'`
+}
+
+export type SshPathFileType = 'file' | 'directory' | 'missing' | 'other'
+
+export interface SshReadableCheck {
+  readable: boolean
+  /** stat -c '%s %a %U %G' 출력 — "크기 모드 소유자 그룹" (실패 시 빈 문자열) */
+  stat?: string
+  /** SSH exec channel을 실행하는 인증된 사용자의 UID. root는 0. interactive shell의 sudo 전환과 무관. */
+  uid?: number
+  /** 위 UID에 해당하는 사용자 이름 (`id -un`). */
+  username?: string
+  /** path의 실제 종류. 디렉토리/missing은 readable=false라도 별도 안내가 필요. */
+  fileType?: SshPathFileType
+  /** `sudo -n true`가 성공하면 true — NOPASSWD sudo가 가능한 환경 */
+  sudoAvailable?: boolean
+}
+
+/**
+ * `ssh.checkReadable` 의 stdout 파싱 — 순수 함수로 분리하여 단위 테스트 가능.
+ *
+ * 입력 라인 종류:
+ *  - `OK_READABLE`           : `head -c 1`이 성공 → 실제 1바이트 read 가능
+ *  - `UID=<n>`               : `id -u` 출력 (root는 `UID=0`)
+ *  - `USER=<name>`           : `id -un` 출력 (사용자 이름)
+ *  - `TYPE=file|directory|missing|other` : path의 실제 종류
+ *  - `SUDO_NOPASSWD`         : `sudo -n true` 성공 — 비밀번호 없는 sudo 가능
+ *  - `<size> <mode> <user> <group>` : `stat -c '%s %a %U %G'` 출력
+ *
+ * readable 판정:
+ *  - `OK_READABLE` 있음 → true (일반 케이스: 실제 read 가능)
+ *  - `UID=0` 있음 → true (root: SELinux/capability quirk로 head는 실패해도 신뢰)
+ *  - 둘 다 없음 → false (진짜 권한 없음 또는 디렉토리/missing 등)
+ */
+export function parseCheckReadableOutput(output: string | null | undefined): SshReadableCheck {
+  const lines = (output ?? '').split('\n').map(l => l.trim()).filter(Boolean)
+  const hasOK = lines.includes('OK_READABLE')
+  const uidLine = lines.find(l => l.startsWith('UID='))
+  const userLine = lines.find(l => l.startsWith('USER='))
+  const typeLine = lines.find(l => l.startsWith('TYPE='))
+  const sudoOk = lines.includes('SUDO_NOPASSWD')
+
+  const uidStr = uidLine?.slice(4)
+  const uid = uidStr !== undefined && /^\d+$/.test(uidStr) ? parseInt(uidStr, 10) : undefined
+  const username = userLine?.slice(5) || undefined
+  const fileTypeRaw = typeLine?.slice(5) as SshPathFileType | undefined
+  const fileType: SshPathFileType | undefined =
+    fileTypeRaw && ['file', 'directory', 'missing', 'other'].includes(fileTypeRaw)
+      ? fileTypeRaw
+      : undefined
+
+  const isRoot = uid === 0
+  const readable = hasOK || isRoot
+
+  // 메타 prefix 라인(TYPE=/UID=/USER=/OK_READABLE/SUDO_NOPASSWD)을 제외한 첫 줄을 stat으로 간주
+  const META_PREFIX_RE = /^(TYPE=|UID=|USER=|OK_READABLE$|SUDO_NOPASSWD$)/
+  const statLine = lines.find(l => !META_PREFIX_RE.test(l)) ?? ''
+
+  return {
+    readable,
+    stat: statLine,
+    uid,
+    username,
+    fileType,
+    sudoAvailable: sudoOk,
+  }
+}
+
 export const ssh = {
   connect: (conn: { host: string; port: number; username: string; password?: string; privateKey?: string; passphrase?: string }) =>
     invoke<{ success: boolean }>('ssh:connect', conn),
   disconnect: () => invoke<{ success: boolean }>('ssh:disconnect'),
   exec: (command: string) => invoke<{ output: string }>('ssh:exec', { command }),
+  /** 현재 SSH 세션의 작업 디렉토리. 미연결/비-Linux 응답 시 output=null. */
+  pwd: () => invoke<{ output: string | null }>('ssh:pwd'),
   test: () => invoke<{ success: boolean }>('ssh:test'),
   state: () => invoke<{ isConnected: boolean; isConnecting: boolean; error?: string; host?: string }>('ssh:state'),
   shellWrite: (data: string) => invoke<{ success: boolean }>('ssh:shell:write', { data }),
   shellRead: () => invoke<{ data: string | null }>('ssh:shell:read'),
   resize: (cols: number, rows: number) => invoke<{ success: boolean }>('ssh:resize', { cols, rows }),
+
+  /**
+   * 권한 사전 체크 — `head -c 1`(실제 1바이트 read) + `id -u`(root trust) + `stat`(메타).
+   *
+   * `test -r`이 SSH exec channel의 root capability 처리 quirk로 잘못된 결과를 내는 사례가
+   * 보고되어 v0.4.x에서 `head -c 1`로 교체. 둘 다 실패해도 `id -u 0`이면 root로 trust.
+   *
+   * 별도 IPC 채널 없이 `ssh:exec` 1회로 처리. path는 단일따옴표 wrap + escape + `--` 종료자.
+   */
+  async checkReadable(path: string): Promise<SshReadableCheck> {
+    const quoted = shellQuoteSingle(path)
+    // 한 번의 SSH exec로 여러 메타데이터 수집:
+    //  - TYPE: 경로가 file/directory/missing/other 중 무엇인지 (디렉토리 사전 차단용)
+    //  - OK_READABLE: 실제 1바이트 read 시도 — capability quirk 회피
+    //  - UID/USER: 인증된 사용자(인터랙티브 셸의 sudo 전환과 무관) 진단용
+    //  - SUDO_NOPASSWD: NOPASSWD sudo 가능 환경이면 모달에 sudo 옵션 제공
+    //  - stat: 메타데이터
+    // 모든 `${quoted}`는 단일따옴표 wrap + escape 적용. `--` 종료자로 `-`로 시작하는 path 보호.
+    const cmd = [
+      `if [ -d ${quoted} ]; then echo TYPE=directory;`,
+      `elif [ -f ${quoted} ]; then echo TYPE=file;`,
+      `elif [ ! -e ${quoted} ]; then echo TYPE=missing;`,
+      `else echo TYPE=other; fi`,
+      `head -c 1 -- ${quoted} > /dev/null 2>&1 && echo OK_READABLE`,
+      `echo "UID=$(id -u 2>/dev/null)"`,
+      `echo "USER=$(id -un 2>/dev/null)"`,
+      `sudo -n true 2>/dev/null && echo SUDO_NOPASSWD`,
+      `stat -c '%s %a %U %G' -- ${quoted} 2>/dev/null`,
+    ].join('; ')
+    try {
+      const { output } = await invoke<{ output: string }>('ssh:exec', { command: cmd })
+      return parseCheckReadableOutput(output)
+    } catch {
+      // SSH 실행 실패 — 미연결 등. 권한 모달이 친절한 메시지를 띄우도록 readable=false 반환.
+      return { readable: false, stat: '' }
+    }
+  },
 }
 
 export const config = {

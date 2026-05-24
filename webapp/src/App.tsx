@@ -26,7 +26,7 @@ function App() {
   const [sshConnection, setSshConnection] = useState<SSHConnection | undefined>()
   const [sshConnected, setSshConnected] = useState(false)
   const [splitRatio, setSplitRatio] = useState(50)  // SSH 패널 너비 %
-  const [activeTab, setActiveTab] = useState<'chat' | 'cli' | 'security' | 'log'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'cli' | 'security' | 'logpilot'>('chat')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [aiStatus, setAiStatus] = useState<{ model: string; configured: boolean; provider: string }>({ model: '', configured: false, provider: '' })
   const [cliAutoConnect, setCliAutoConnect] = useState(false)

@@ -32,10 +32,23 @@ public class IpcHandler
     private readonly SshConnection? _startupConnection;
     private CancellationTokenSource? _streamingCts;
 
-    // 로그 분석 전용 시스템 프롬프트 — HandleLogsAnalyze* 에서 임시 적용 후 복구
-    private const string LogAnalyzeSystem = @"당신은 Linux 서버 로그 분석 전문가입니다. 아래 로그에서
-(1) 오류/경고 패턴 (2) 시간순 이상 징후 (3) 가능한 원인 (4) 추가 확인 명령
-을 한국어로 간결히 제시하세요.";
+    // 로그 분석 전용 시스템 프롬프트 — LogPilot 4섹션/신호등 응답 형식 강제.
+    // logpilotResponseParser(webapp) 가 이 형식을 파싱한다 — 변경 시 파서도 함께 갱신.
+    private const string LogAnalyzeSystem = @"당신은 Linux 서버 로그 분석 전문가입니다. 응답은 반드시 다음 4개 마크다운 H2 섹션으로 구성하세요.
+
+## 📌 결론
+첫 줄에 반드시 ""🔴 위험"" 또는 ""🟡 주의"" 또는 ""🟢 정상"" 중 하나로 시작하세요.
+그 뒤에 한 문장으로 ""지금 문제가 있는가/없는가, 어떤 종류인가""를 답하세요.
+
+## 🧭 원인
+관찰된 사실과 추정 원인을 3개 이내 불릿으로 정리하세요.
+
+## 🚨 지금 할 일
+실행 가능한 명령을 fenced code block(```bash)으로 제시하세요.
+각 코드블록 바로 위에 ""**이 명령은:** ..."" 형식으로 한 줄 설명을 붙이세요.
+
+## 🗓 나중에 검토할 일
+설정 변경, 모니터링 추가 등 장기 권고 사항을 불릿으로 정리하세요.";
 
     public IpcHandler(
         WebView2 webView,
@@ -117,6 +130,7 @@ public class IpcHandler
             "ssh:connect"              => await HandleSshConnect(msg.Payload),
             "ssh:disconnect"           => HandleSshDisconnect(),
             "ssh:exec"                 => await HandleSshExec(msg.Payload),
+            "ssh:pwd"                  => await HandleSshPwd(),
             "ssh:test"                 => await HandleSshTest(),
             "ssh:state"                => HandleSshState(),
             "ssh:shell:write"          => HandleSshShellWrite(msg.Payload),
@@ -268,6 +282,31 @@ public class IpcHandler
             data.Command, output, success, sw.ElapsedMilliseconds);
 
         return new { output };
+    }
+
+    /// <summary>
+    /// 현재 SSH 세션의 작업 디렉토리(pwd) 반환 — LogPilot 탭 진입 시 자동 채움용.
+    /// 미연결/실패 시 null 반환 (예외 throw하지 않음 — UI 가벼운 상태로 유지).
+    /// 응답은 trim + '/' 시작 검증으로 비-Linux 출력 방어.
+    /// </summary>
+    private async Task<object> HandleSshPwd()
+    {
+        if (!_sshService.IsConnected)
+            return new { output = (string?)null };
+        try
+        {
+            var raw = await _sshService.ExecuteAsync("pwd");
+            // 다중 줄/공백/CR 정리 후 첫 유효 행만 사용
+            var trimmed = raw?.Trim()?.Split('\n').FirstOrDefault()?.Trim() ?? string.Empty;
+            // Linux 절대 경로만 인정 — Windows OpenSSH 서버 등 비호환 응답 차단
+            if (string.IsNullOrEmpty(trimmed) || !trimmed.StartsWith('/'))
+                return new { output = (string?)null };
+            return new { output = trimmed };
+        }
+        catch
+        {
+            return new { output = (string?)null };
+        }
     }
 
     private async Task<object> HandleSshTest() => new { success = await _sshService.TestAsync() };
