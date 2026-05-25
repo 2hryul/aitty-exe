@@ -699,20 +699,33 @@ public class IpcHandler
         var prompt = $"SSH last command output:\n{lastOutput}\n\nAnalyze the output, explain issues if any, and suggest the next safe action.";
 
         System.Windows.Threading.DispatcherOperation? lastAnalyzeOp = null;
-        var response = await _aiManager.Active.SendStreamingAsync(prompt, chunk =>
+        try
         {
-            var chunkResponse = new IpcResponse { Id = msg.Id, Type = "ai:ssh:analyze:chunk", Payload = new { chunk } };
+            var response = await _aiManager.Active.SendStreamingAsync(prompt, chunk =>
+            {
+                var chunkResponse = new IpcResponse { Id = msg.Id, Type = "ai:ssh:analyze:chunk", Payload = new { chunk } };
+                var json = JsonSerializer.Serialize(chunkResponse, JsonOptions);
+                lastAnalyzeOp = _webView.Dispatcher.InvokeAsync(
+                    () => _webView.CoreWebView2.PostWebMessageAsJson(json),
+                    System.Windows.Threading.DispatcherPriority.Background);
+            });
+
+            if (lastAnalyzeOp is not null)
+                try { await lastAnalyzeOp.Task.ConfigureAwait(false); } catch { }
+
+            _ = AiChatLogger.AppendAsync(_aiManager.ActiveProvider, response.Model, null, prompt, response);
+            return new { content = response.Content };
+        }
+        catch (Exception ex)
+        {
+            // AI 호출 실패(크레딧 부족 400, 인증 401, 네트워크 등) — 사용자 카드에 명확한 한 줄 안내.
+            // 빈 응답으로 두면 사용자가 원인을 알 수 없어 진단 곤란. chunk로 보내 streaming 흐름 그대로 활용.
+            var friendly = $"⚠ AI 호출 실패: {ex.Message}";
+            var chunkResponse = new IpcResponse { Id = msg.Id, Type = "ai:ssh:analyze:chunk", Payload = new { chunk = friendly } };
             var json = JsonSerializer.Serialize(chunkResponse, JsonOptions);
-            lastAnalyzeOp = _webView.Dispatcher.InvokeAsync(
-                () => _webView.CoreWebView2.PostWebMessageAsJson(json),
-                System.Windows.Threading.DispatcherPriority.Background);
-        });
-
-        if (lastAnalyzeOp is not null)
-            try { await lastAnalyzeOp.Task.ConfigureAwait(false); } catch { }
-
-        _ = AiChatLogger.AppendAsync(_aiManager.ActiveProvider, response.Model, null, prompt, response);
-        return new { content = response.Content };
+            await _webView.Dispatcher.InvokeAsync(() => _webView.CoreWebView2.PostWebMessageAsJson(json));
+            return new { content = friendly };
+        }
     }
 
     private async Task<object> HandleAiSuggestCommand(IpcMessage msg)

@@ -280,6 +280,10 @@ public class ClaudeApiService : IAiService
         request.Headers.Add("anthropic-version", ApiVersion);
         request.Headers.Add("x-api-key", _apiKey);
 
+        // 운영 디버깅용 로깅 — IsEngineAvailable/ListModels와 동일 패턴.
+        // 사용자 빈 응답 호소 시 ai_api.log로 API 호출/응답 즉시 식별 가능.
+        AiRequestLogger.LogRequest(request, bodyJson: json, note: $"Claude SendStreamingAsync model={_model} userMsgLen={userMessage?.Length ?? -1}");
+
         var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
             .ConfigureAwait(false);
 
@@ -289,6 +293,7 @@ public class ClaudeApiService : IAiService
                 _conversationHistory.RemoveAt(_conversationHistory.Count - 1);
             var errorJson = await response.Content.ReadAsStringAsync(ct)
                 .ConfigureAwait(false);
+            AiRequestLogger.LogResponse(response, errorJson, sw.ElapsedMilliseconds);
             var errorDetail = TryExtractError(errorJson);
             throw new HttpRequestException($"Claude API error ({response.StatusCode}): {errorDetail}");
         }

@@ -16,13 +16,14 @@ public class SshService : IDisposable
     private SshClient? _client;
     private ShellStream? _shellStream;
     private readonly object _streamLock = new();  // ShellStream 동시 Read/Write 보호
-    private readonly object _bufferLock = new(); // _recentLines, _lastOutputBuffer, _collectingOutput 보호
+    private readonly object _bufferLock = new(); // _recentLines, _lastOutputBuffer 보호
     private readonly SshConnectionState _state = new();
     private readonly Queue<string> _recentLines = new();
 
-    // 마지막 명령어 이후 출력만 수집하는 버퍼
+    // SSH 셸 출력 누적 버퍼 — AI "마지막 출력 분석"용. MaxLastOutputLines 한도로 자연 슬라이딩 윈도우.
+    // 2026-05-25: 이전 `_collectingOutput` 게이트는 사용자 Enter 외 케이스(자동 명령/IPC 타이밍)에서
+    // 누적이 안 되는 결함이 있어 제거 — 항상 누적.
     private readonly List<string> _lastOutputBuffer = new();
-    private bool _collectingOutput = false;
 
     public SshConnectionState State => _state;
     public bool IsConnected =>
@@ -122,7 +123,6 @@ public class SshService : IDisposable
             {
                 _recentLines.Clear();
                 _lastOutputBuffer.Clear();
-                _collectingOutput = false;
             }
             _state.IsConnected = true;
             _state.IsConnecting = false;
@@ -212,13 +212,13 @@ public class SshService : IDisposable
         }
         if (!string.IsNullOrWhiteSpace(data) && data != "\r")
             Remember(data.Replace("\r", string.Empty));
-        // Enter 키(\r) 감지 → 새 명령어 시작: 마지막 출력 버퍼 초기화 후 수집 시작
+        // Enter 키(\r) 감지 → 새 명령어 시작: 마지막 출력 버퍼 초기화.
+        // (이전 `_collectingOutput=true` 게이트는 제거 — 항상 누적이므로 클리어만 수행.)
         if (data.Contains('\r'))
         {
             lock (_bufferLock)
             {
                 _lastOutputBuffer.Clear();
-                _collectingOutput = true;
             }
         }
     }
@@ -254,10 +254,14 @@ public class SshService : IDisposable
             }
         }
 
-        // 명령어 실행 후 출력을 마지막 출력 버퍼에 수집 (ANSI 코드 제거)
+        // 명령어 실행 후 출력을 마지막 출력 버퍼에 수집 (ANSI 코드 제거).
+        // 2026-05-25 fix: `_collectingOutput` 게이트가 사용자 Enter 직후가 아니면 false로 유지되어
+        // 자동 실행된 명령(로그인 스크립트, attach 직후 출력 등) 또는 IPC 타이밍 어긋남 시
+        // AI 분석이 빈 응답을 받던 문제를 해결. 항상 누적하되 MaxLastOutputLines로 안전 상한.
+        // (Clear는 WriteToShell의 Enter 시 그대로 유지 — "마지막 명령 출력" 의미 보존)
         lock (_bufferLock)
         {
-            if (_collectingOutput && !string.IsNullOrEmpty(output))
+            if (!string.IsNullOrEmpty(output))
             {
                 var clean = AnsiRegex.Replace(output, string.Empty);
                 foreach (var line in clean.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
