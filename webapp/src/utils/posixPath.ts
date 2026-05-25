@@ -52,6 +52,11 @@ export function join(base: string, sub: string): string {
   if (sub.startsWith('/')) return normalize(sub)
   if (!base.startsWith('/')) {
     // 호출자 계약 위반(base는 절대여야 함). 안전상 normalize만 시도.
+    // N2: dev 환경에선 호출자 버그를 표면화. 프로덕션 빌드(import.meta.env.DEV=false)는 silent.
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.warn(`[posixPath.join] base가 절대 경로 아님: "${base}" — 호출자 계약 위반. silent fallback 적용.`)
+    }
     return normalize(base + '/' + sub)
   }
   // base가 root('/')이면 중복 슬래시 방지를 위해 base 그대로 사용

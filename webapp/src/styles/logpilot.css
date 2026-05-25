@@ -88,23 +88,34 @@
 .logpilot-cwd-btn:hover {
   background: rgba(0, 102, 204, 0.22);
 }
-/* Step F DF-7 — OSC 7 활성화 가이드 ⓘ 마커. tooltip은 title 속성에서 OS 네이티브로 표시. */
+/* Step F DF-7 + S2 — OSC 7 가이드 ⓘ 마커.
+   <button>으로 변경하여 키보드 사용자도 접근 가능 (focus 가능). title tooltip은 OS 네이티브.
+   button 기본 스타일 리셋 + 시각 동일성 유지. */
 .logpilot-cwd-info {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
+  border: none;
+  padding: 0;
   border-radius: 50%;
   background: rgba(180, 180, 180, 0.12);
   color: var(--txt-3);
+  font-family: inherit;
   font-size: 11px;
+  line-height: 1;
   cursor: help;
   user-select: none;
 }
-.logpilot-cwd-info:hover {
+.logpilot-cwd-info:hover,
+.logpilot-cwd-info:focus-visible {
   background: rgba(180, 180, 180, 0.22);
   color: var(--txt-2);
+}
+.logpilot-cwd-info:focus-visible {
+  outline: 2px solid var(--accent-1);
+  outline-offset: 1px;
 }
 .logpilot-icon-btn {
   background: transparent;

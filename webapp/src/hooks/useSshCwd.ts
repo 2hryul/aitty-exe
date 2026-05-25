@@ -101,15 +101,25 @@ function resolveCdArg(
 /**
  * OSC 7 콜백 인자(`file://hostname/path`)에서 path 추출.
  * 매칭 실패 시 null — 호출자는 무시.
+ *
+ * N3: host 부분을 캡처하여 dev 환경에서 비정상 호스트(빈 문자열도 정상)를 표면화.
+ * 보안 위험 0 (우리는 path 의미만 사용) — 디버깅 보조 목적.
  */
 function parseOsc7Path(data: string): string | null {
-  const match = data.match(/^file:\/\/[^/]*(\/.*)$/)
+  const match = data.match(/^file:\/\/([^/]*)(\/.*)$/)
   if (!match) return null
+  const [, host, rawPath] = match
+  // dev 환경 + host가 비어있지 않고 'localhost' 아님 → 원격 호스트명. 정상 케이스(emit한 셸의 hostname).
+  // 다중 SSH 세션 또는 비정상 OSC 7 emit 디버깅용 console.log만.
+  if (import.meta.env.DEV && host && host !== 'localhost') {
+    // eslint-disable-next-line no-console
+    console.debug(`[useSshCwd] OSC 7 host=${host}, path=${rawPath}`)
+  }
   // URL 디코딩(공백 %20 등). 실패 시 raw 사용.
   try {
-    return decodeURIComponent(match[1])
+    return decodeURIComponent(rawPath)
   } catch {
-    return match[1]
+    return rawPath
   }
 }
 
@@ -236,7 +246,10 @@ export function useSshCwd(): UseSshCwdReturn {
         lineBufferRef.current = ''
         return
       }
-      // 멀티 문자 (붙여넣기 등) — `\r`/`\n`이 포함되면 그 직전까지만 누적 후 commit
+      // 멀티 문자 (붙여넣기 / IME 합성) — `\r`/`\n`이 포함되면 그 직전까지만 누적 후 commit.
+      // N1: IME 멀티바이트(한글/일본어 등) 입력도 이 분기에서 그대로 누적된다.
+      // cd 명령에 비ASCII 경로명을 IME로 치는 케이스는 드물고, CD_PATTERN 매칭 실패 시
+      // safe degradation (추적 보류). 별도 IME 합성 상태 후크는 xterm 단에선 추가 비용 대비 효익 낮음.
       if (data.length > 1) {
         const newlineIdx = data.search(/[\r\n]/)
         if (newlineIdx >= 0) {

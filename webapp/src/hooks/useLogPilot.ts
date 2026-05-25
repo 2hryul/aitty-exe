@@ -19,7 +19,7 @@
  *  - 시나리오별 후속 액션 칩은 정적 정의 (logpilotScenarios.ts).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   logs,
   ssh,
@@ -69,20 +69,8 @@ export interface UseLogPilotArgs {
 }
 
 export interface UseLogPilotReturn {
-  // ── SSH 경로 ─────────────────────────────────
-  /**
-   * @deprecated Step F부터 App.tsx의 `useSshCwd` 훅이 SoT.
-   * LogPilotTab은 prop `sshCwd`를 우선 사용. 본 필드는 다음 step에서 제거 예정.
-   * (현재 코드 호환을 위해 보존 — `ssh.pwd()` exec 채널 응답이라 사용자 인터랙티브 cd 추적 불가)
-   */
-  sshCwd: string | null
-  /**
-   * @deprecated Step F부터 App.tsx `useSshCwd.refreshCwd`가 SoT.
-   * 다음 step에서 제거 예정.
-   */
-  refreshCwd: () => Promise<void>
-  /** @deprecated Step F부터 App.tsx `useSshCwd.isCwdLoading`가 SoT. */
-  isCwdLoading: boolean
+  // (sshCwd/refreshCwd/isCwdLoading는 Step F deprecation 거쳐 본 step에서 제거.
+  //  App.tsx의 useSshCwd 훅이 단일 source. LogPilotTab은 prop으로 받음.)
 
   // ── 시나리오 ────────────────────────────────
   selectedScenario: LogPilotScenario | null
@@ -126,8 +114,6 @@ function sanitizeError(raw: string, action: string): string {
 export function useLogPilot(args: UseLogPilotArgs): UseLogPilotReturn {
   const { sshConnected, provider, model } = args
 
-  const [sshCwd, setSshCwd] = useState<string | null>(null)
-  const [isCwdLoading, setIsCwdLoading] = useState(false)
   const [selectedScenario, setSelectedScenario] = useState<LogPilotScenario | null>(null)
   const [permissionCheck, setPermissionCheck] = useState<PermissionCheckState | null>(null)
 
@@ -141,7 +127,6 @@ export function useLogPilot(args: UseLogPilotArgs): UseLogPilotReturn {
 
   // 누적 스트림 버퍼 — 청크 도착 시 setState 경합 없이 순차 누적
   const resultBufferRef = useRef<string>('')
-  const lastConnectedRef = useRef(false)
 
   // provider/model 최신값을 비동기 콜백에서 참조 (budget 평가용)
   const providerRef = useRef(provider)
@@ -153,33 +138,9 @@ export function useLogPilot(args: UseLogPilotArgs): UseLogPilotReturn {
   // (이전 chunkDurationsRef 이동평균 후보는 사용되지 않아 제거 — Reviewer S-3)
   const chunkStartRef = useRef<number | null>(null)
 
-  const refreshCwd = useCallback(async () => {
-    if (!sshConnected) {
-      setSshCwd(null)
-      return
-    }
-    setIsCwdLoading(true)
-    try {
-      const { output } = await ssh.pwd()
-      setSshCwd(output)
-    } catch (err) {
-      logger.error('[useLogPilot.refreshCwd] pwd 실패', { error: err })
-      setSshCwd(null)
-    } finally {
-      setIsCwdLoading(false)
-    }
-  }, [sshConnected])
-
-  useEffect(() => {
-    if (sshConnected && !lastConnectedRef.current) {
-      lastConnectedRef.current = true
-      refreshCwd()
-    }
-    if (!sshConnected) {
-      lastConnectedRef.current = false
-      setSshCwd(null)
-    }
-  }, [sshConnected, refreshCwd])
+  // (Step F deprecation 정리: cwd 시드/추적은 App.tsx의 useSshCwd가 단일 담당.
+  //  useLogPilot.refreshCwd / sshCwd state / lastConnectedRef useEffect 모두 제거.
+  //  중복 ssh.pwd() round-trip(Reviewer S1) 자연 해소.)
 
   const pickScenario = useCallback((key: LogPilotScenarioKey) => {
     setSelectedScenario(LOGPILOT_SCENARIOS[key])
@@ -363,10 +324,6 @@ export function useLogPilot(args: UseLogPilotArgs): UseLogPilotReturn {
   }, [rawResult])
 
   return {
-    sshCwd,
-    refreshCwd,
-    isCwdLoading,
-
     selectedScenario,
     pickScenario,
 
