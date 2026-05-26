@@ -174,7 +174,7 @@ end;
 // ── 설치 전 체크 ───────────────────────────────────────────────────────────
 function InitializeSetup: Boolean;
 var
-  CurDate, ExpDate: TDateTime;
+  CurYMD, ExpYMD: Integer;
 begin
   Result := True;
 
@@ -186,9 +186,10 @@ begin
   end;
 
   // [L-1] 베타 만료 가드 — App.xaml.cs PrototypeExpiry와 동일 정책 (일 단위 비교)
-  ExpDate := EncodeDate({#ExpiryYear}, {#ExpiryMonth}, {#ExpiryDay});
-  CurDate := Trunc(Now);
-  if CurDate > ExpDate then begin
+  // Inno Setup Pascal Script는 TDateTime/DecodeDate 직접 사용 불가 → GetDateTimeString + 정수 비교
+  CurYMD := StrToInt(GetDateTimeString('yyyymmdd', #0, #0));
+  ExpYMD := {#ExpiryYear} * 10000 + {#ExpiryMonth} * 100 + {#ExpiryDay};
+  if CurYMD > ExpYMD then begin
     MsgBox(
       '{#AppName}' + ' 프로토타입의 설치 기한이 만료되었습니다.' + #13#10 +
       '(만료일: {#ExpiryYear}-{#ExpiryMonth}-{#ExpiryDay})' + #13#10 + #13#10 +
