@@ -196,9 +196,13 @@ public class LogCollectorService
         if (string.IsNullOrEmpty(keyPath))
             throw new InvalidOperationException("[LogCollectorService] 인증 수단 없음 - key 또는 password 필요");
 
-        return string.IsNullOrEmpty(conn.Passphrase)
-            ? new PrivateKeyFile(keyPath)
-            : new PrivateKeyFile(keyPath, conn.Passphrase);
+        // [M-A] Passphrase는 char[] — 사용 시점에만 string 카피본 생성 (SSH.NET 한계).
+        if (conn.Passphrase is { Length: > 0 } pp)
+        {
+            var ppStr = new string(pp);
+            return new PrivateKeyFile(keyPath, ppStr);
+        }
+        return new PrivateKeyFile(keyPath);
     }
 }
 

@@ -32,6 +32,16 @@ public partial class MainWindow : Window
         false;
 #endif
 
+    // [L-2] DevTools 활성화 게이트. DEBUG는 상시, Release는 AITTY_DEVTOOLS=1 환경변수만 허용.
+    // F12 KeyBinding과 CoreWebView2Settings.AreDevToolsEnabled에 동일하게 적용.
+    // 컨텍스트 메뉴 Inspect 등 우회 표면 차단을 위해 단축키 + 설정 양쪽 게이트 필수.
+    private static bool DevToolsAllowed =>
+#if DEBUG
+        true;
+#else
+        Environment.GetEnvironmentVariable("AITTY_DEVTOOLS") == "1";
+#endif
+
     public MainWindow()
     {
         InitializeComponent();
@@ -65,9 +75,14 @@ public partial class MainWindow : Window
         var reloadBinding = new KeyBinding(new RelayCommand(_ => webView.CoreWebView2?.Reload()), new KeyGesture(Key.R, ModifierKeys.Control));
         InputBindings.Add(reloadBinding);
 
-        // F12 → DevTools (DEBUG + Release 모두 활성화 — 빈 화면 등 진단용)
-        var devToolsBinding = new KeyBinding(new RelayCommand(_ => webView.CoreWebView2?.OpenDevToolsWindow()), new KeyGesture(Key.F12));
-        InputBindings.Add(devToolsBinding);
+        // [L-2] F12 → DevTools. DEBUG는 상시 활성, Release는 AITTY_DEVTOOLS=1 환경변수 escape hatch.
+        // 상용 배포에서 IPC 메시지/메모리 검사 표면 차단 + 운영팀 진단 가능성 유지.
+        // CoreWebView2Settings.AreDevToolsEnabled도 동일 분기 (Initialize 시점, 아래 MainWindow_Loaded 참조).
+        if (DevToolsAllowed)
+        {
+            var devToolsBinding = new KeyBinding(new RelayCommand(_ => webView.CoreWebView2?.OpenDevToolsWindow()), new KeyGesture(Key.F12));
+            InputBindings.Add(devToolsBinding);
+        }
 
         // Ctrl+L → 로그 폴더 열기 (사용자가 로그 파일 쉽게 찾도록)
         var logBinding = new KeyBinding(new RelayCommand(_ => {
@@ -137,6 +152,20 @@ public partial class MainWindow : Window
 
             await InitializeWebView2Async(baseDataFolder);
             StartupLogger.Log("[MainWindow_Loaded] InitializeWebView2Async 완료");
+
+            // [L-2] DevTools UI(F12/컨텍스트 메뉴 Inspect) 가시성 게이트.
+            // DevTools Protocol 자체(CallDevToolsProtocolMethodAsync 등)는 별개 API라
+            // AreDevToolsEnabled=false 상태에서도 호출 가능 — Runtime.consoleAPICalled / exceptionThrown
+            // 캡처는 정상 동작 (Microsoft WebView2 문서 확인).
+            try
+            {
+                webView.CoreWebView2.Settings.AreDevToolsEnabled = DevToolsAllowed;
+                StartupLogger.Log($"[WebView2] AreDevToolsEnabled={DevToolsAllowed}");
+            }
+            catch (Exception ex)
+            {
+                StartupLogger.LogException("[WebView2] AreDevToolsEnabled 설정 실패", ex);
+            }
 
             // IsNonClientRegionSupportEnabled는 WebView2 Runtime v117+의 ICoreWebView2Settings9 필요.
             // 구형 런타임에서는 InvalidCastException 발생 → WPF 수준 폴백 드래그 활성화.
@@ -323,6 +352,7 @@ public partial class MainWindow : Window
                 Directory.CreateDirectory(userDataFolder);
                 var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
                 await webView.EnsureCoreWebView2Async(env);
+                ConfigureContextMenu();
                 return; // 성공
             }
             catch (System.Runtime.InteropServices.COMException ex) when (attempt < 2)
@@ -348,6 +378,29 @@ public partial class MainWindow : Window
         Directory.CreateDirectory(userDataFolder);
         var finalEnv = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
         await webView.EnsureCoreWebView2Async(finalEnv);
+        ConfigureContextMenu();
+    }
+
+    /// <summary>
+    /// WebView2 우클릭 컨텍스트 메뉴를 "복사하기 / 붙여넣기"만 남기고 모두 제거.
+    /// 뒤로/새로 고침/다른 이름으로 저장/인쇄/기타 도구/검사 등 사용자 혼란 유발 항목 차단.
+    /// </summary>
+    private void ConfigureContextMenu()
+    {
+        webView.CoreWebView2.ContextMenuRequested += (_, args) =>
+        {
+            var items = args.MenuItems;
+            for (int i = items.Count - 1; i >= 0; i--)
+            {
+                var name = items[i].Name;
+                // WebView2 표준 명칭: "copy" / "paste" 외 모두 제거
+                if (!string.Equals(name, "copy", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(name, "paste", StringComparison.OrdinalIgnoreCase))
+                {
+                    items.RemoveAt(i);
+                }
+            }
+        };
     }
 
     private static void CleanWebView2LockFiles(string folder)

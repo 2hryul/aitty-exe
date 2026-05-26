@@ -108,8 +108,8 @@ public class ConfigService
         foreach (var conn in sourceConnections)
         {
             var sanitized = SanitizeConnection(conn);
-            // [H-3] Password는 char[] — Length 기반 검사로 변경. Passphrase는 string 유지.
-            if (conn.Password is { Length: > 0 } || !string.IsNullOrEmpty(conn.Passphrase))
+            // [H-3/M-A] Password/Passphrase 모두 char[] — Length 기반 검사.
+            if (conn.Password is { Length: > 0 } || conn.Passphrase is { Length: > 0 })
                 changed = true;
             sanitizedConnections.Add(sanitized);
         }

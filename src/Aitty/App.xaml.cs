@@ -17,8 +17,27 @@ public partial class App : Application
     /// </summary>
     internal static SshConnection? StartupConnection { get; private set; }
 
+    /// <summary>
+    /// 프로토타입 유효기간 — 이 날짜를 넘으면 첫 실행 시점에 안내 팝업 후 종료.
+    /// 사내 검증용 빌드의 운영 가이드 — 시스템 시계 조작 우회는 의도된 한계(보안 기능 아님).
+    /// </summary>
+    private static readonly DateTime PrototypeExpiry =
+        new(2026, 10, 25, 23, 59, 59, DateTimeKind.Local);
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        // [Expiry-Guard] base.OnStartup 전에 처리 — StartupUri 기반 MainWindow 생성 자체 차단
+        if (DateTime.Now > PrototypeExpiry)
+        {
+            MessageBox.Show(
+                "AItty 프로토타입으로 업데이트 서버 연결이 필요합니다.",
+                "AItty",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
         base.OnStartup(e);
 
         // 진단 로그 초기화 (WebView2 문제, 흰 화면 등 재현 시 사용자가 로그 전달용)

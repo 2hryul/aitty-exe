@@ -27,7 +27,10 @@ public static class PuttyArgParser
 
         string? host = null;
         string? username = null;
-        string? password = null;
+        // [H-A] -pw 인자도 char[]로 보관 — H-3/M-A와 동일한 패턴.
+        // 단, args[] 자체는 외부 호출자(PSM/HiWare 등) 소유라 우리가 zeroize 못 함.
+        // ToCharArray()로 새 버퍼를 만든 뒤 best-effort로 args[i]만 string.Empty 처리한다.
+        char[]? password = null;
         string? privateKey = null;
         int port = 22;
 
@@ -53,8 +56,11 @@ public static class PuttyArgParser
                     break;
 
                 // ⚠ -pw: 프로세스 커맨드라인에 비밀번호 노출 — HiWare 등 PSM 연동 시 불가피
+                //         CLI 표면(OS 프로세스 테이블) 자체는 별도 step 후보.
                 case "-pw" when HasNext(args, i):
-                    password = args[++i];
+                    i++;
+                    password = args[i].ToCharArray();
+                    args[i] = string.Empty;  // best-effort 참조 해제
                     break;
 
                 case "-i" when HasNext(args, i):
@@ -101,8 +107,8 @@ public static class PuttyArgParser
             Host = host,
             Port = port,
             Username = username ?? string.Empty,
-            // [H-3] Password는 char[]로 보관 — 사용 후 SshService에서 0으로 덮어쓴다
-            Password = string.IsNullOrEmpty(password) ? null : password.ToCharArray(),
+            // [H-3/H-A] Password는 char[]로 보관 — 사용 후 SshService에서 0으로 덮어쓴다
+            Password = password is { Length: > 0 } ? password : null,
             PrivateKey = privateKey,
         };
     }

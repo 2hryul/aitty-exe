@@ -93,9 +93,19 @@ public class SshService : IDisposable
                 if (!string.IsNullOrEmpty(connection.PrivateKey))
                 {
                     var keyPath = ResolvePath(connection.PrivateKey);
-                    var keyFile = string.IsNullOrEmpty(connection.Passphrase)
-                        ? new PrivateKeyFile(keyPath)
-                        : new PrivateKeyFile(keyPath, connection.Passphrase);
+                    // [M-A] Passphrase는 char[] — 사용 시점에만 string 카피본 생성.
+                    // SSH.NET PrivateKeyFile은 string만 받기 때문에 라이브러리 측 메모리는 .NET 한계로 정리 불가.
+                    // char[] 본체는 SshConnection.Dispose()에서 Array.Clear로 0 덮어쓰기.
+                    PrivateKeyFile keyFile;
+                    if (connection.Passphrase is { Length: > 0 } pp)
+                    {
+                        var ppStr = new string(pp);
+                        keyFile = new PrivateKeyFile(keyPath, ppStr);
+                    }
+                    else
+                    {
+                        keyFile = new PrivateKeyFile(keyPath);
+                    }
                     authMethods.Add(new PrivateKeyAuthenticationMethod(connection.Username, keyFile));
                 }
 

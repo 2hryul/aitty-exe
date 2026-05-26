@@ -244,10 +244,10 @@ public class IpcHandler
             Port       = req.Port,
             Username   = req.Username,
             PrivateKey = req.PrivateKey,
-            // [H-3] Password는 char[]로 보관 — 사용 직후 SshService에서 0으로 덮어쓴다.
-            // SshConnectRequest DTO의 Password는 string 유지 (JSON 역직렬화 short-lived).
+            // [H-3/M-A] Password/Passphrase 모두 char[]로 보관 — 사용 직후 SshService에서 0으로 덮어쓴다.
+            // SshConnectRequest DTO의 Password/Passphrase는 string 유지 (JSON 역직렬화 short-lived).
             Password   = string.IsNullOrEmpty(req.Password) ? null : req.Password.ToCharArray(),
-            Passphrase = req.Passphrase,
+            Passphrase = string.IsNullOrEmpty(req.Passphrase) ? null : req.Passphrase.ToCharArray(),
         };
         var success = await _sshService.ConnectAsync(conn);
 
@@ -1003,7 +1003,11 @@ public class IpcHandler
         var sudoPrefix = data.Function.StartsWith("fix") && data.UseSudo ? "sudo " : "";
 
         // 비대화형 실행: source common.sh → source 스크립트(main_menu 제외) → 함수 호출
-        var command = $"{sudoPrefix}bash -c 'cd ~/aitty_sec && " +
+        // [M-D] `bash -c --` 옵션 종료자 명시 — scriptFile/data.Function이 화이트리스트로 안전하지만,
+        //       향후 표면 확장 시 옵션 처리 공격(예: `--rcfile` 류) 차단 defense-in-depth.
+        //       `--` 다음 인자가 -c의 command 문자열로 인식되는 것은 POSIX 표준이며
+        //       bash의 process substitution `<(...)` 호환 (process substitution은 command 문자열 실행 중에 평가).
+        var command = $"{sudoPrefix}bash -c -- 'cd ~/aitty_sec && " +
                       $"source common.sh && " +
                       $"source <(grep -v \"^main_menu$\" {scriptFile} | grep -v \"^# Start\\|^# 스크립트\") && " +
                       $"{data.Function}'";
@@ -1359,9 +1363,13 @@ public class IpcHandler
         if (string.IsNullOrEmpty(keyPath))
             throw new InvalidOperationException("No authentication method available (key required)");
 
-        return string.IsNullOrEmpty(conn.Passphrase)
-            ? new Renci.SshNet.PrivateKeyFile(keyPath)
-            : new Renci.SshNet.PrivateKeyFile(keyPath, conn.Passphrase);
+        // [M-A] Passphrase는 char[] — 사용 시점에만 string 카피본 생성 (SSH.NET 한계).
+        if (conn.Passphrase is { Length: > 0 } pp)
+        {
+            var ppStr = new string(pp);
+            return new Renci.SshNet.PrivateKeyFile(keyPath, ppStr);
+        }
+        return new Renci.SshNet.PrivateKeyFile(keyPath);
     }
 
     // [M-1] payload 검증 강화 — null/문자열/객체 입력 모두 ArgumentException 으로 통일.

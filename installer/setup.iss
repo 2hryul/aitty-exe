@@ -1,18 +1,28 @@
 ; =============================================================================
-;  Aitty SSH Terminal - Inno Setup Script v0.4.0
+;  Aitty SSH Terminal - Inno Setup Script v0.4.2
 ;  Compile: ISCC.exe setup.iss
 ;
-;  변경사항 (v0.4.0 — Log 탭 logcheck.sh 기반 전면 개편):
-;    - logcheck.sh 5개 모드 액션 버튼 (요약 / 패턴 검색 / 최근 N시간 / 기간 / 빈출 패턴)
-;    - 스크립트 앱 내장 — 매 호출마다 base64 → bash -s로 stdin 전달, 원격 사전 설치 불필요
-;    - 셸 출력 즉시 표시 + AI 분석은 별도 버튼으로 분리
-;    - 결과 패널 최하단 배치, 셸/AI 응답 토글
-;    - "예산" 라벨 → "컨텍스트 크기"로 일괄 교체
-;    - 시간 범위 위저드 / 시스템 프롬프트 옵션 / 모드 토글 / 로그 수집 버튼 제거
+;  변경사항 (v0.4.2 — 만료 가드 + WebView2 우클릭 제한):
+;    - 프로토타입 만료 가드: 2026-10-25 이후 첫 실행 시 안내 팝업 → 종료
+;    - WebView2 컨텍스트 메뉴 제한: 복사/붙여넣기만 허용
+;      (뒤로/새로 고침/다른 이름으로 저장/인쇄/기타 도구/검사 모두 제거)
+;
+;  변경사항 (v0.4.1 — 보안 취약점 일괄 패치 [S1 batch]):
+;    - C-1/S-1: AiRequestLogger 민감 헤더 + URL ?key= 쿼리 마스킹
+;    - H-1: AllowInsecureSsl 활성화 시 MITM 경고 confirm 다이얼로그
+;    - H-2: SecurityRun 화이트리스트(check_u01..u99/fix_u01..u99) 단일화
+;    - H-3: SshConnection.Password char[] 전환 + Dispose 0-overwrite
+;    - M-1: DeserializePayload null/JsonException → ArgumentException 일관 wrap
+;    - M-2: LogFetchFile 경로 sanitize (개행/shell metachar/백슬래시 차단)
+;    - S-2: SSH connect 실패 시 conn.Dispose() — char[] Password 누수 차단
+;    - 부수: IPC 에러 마스킹 완화(도메인 예외 메시지 전달) + Check Step 2 백엔드 상태 검증
+;    - L-1(PBKDF2 100k→150k)은 파일 포맷 호환성 이슈로 deferred
+;
+;  변경사항 (v0.4.0 — Log 탭 logcheck.sh 기반 전면 개편): 이전 릴리즈 참조
 ; =============================================================================
 
 #define AppName      "Aitty SSH Terminal"
-#define AppVersion   "0.4.0"
+#define AppVersion   "0.4.2"
 #define AppPublisher "Shinhan DS AX"
 #define AppExeName   "Aitty.exe"
 #define AppId        "{{8A3F2E1B-4C5D-4E6F-9A0B-1C2D3E4F5A6B}"
