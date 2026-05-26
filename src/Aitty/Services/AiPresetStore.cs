@@ -94,12 +94,27 @@ public class AiPresetStore
         var preset = presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
         if (preset is null) return null;
 
-        var plainKey = string.IsNullOrEmpty(preset.EncryptedApiKey)
-            ? string.Empty
-            : AesKeyProtector.Decrypt(preset.EncryptedApiKey, password);
+        string? plainKey;
+        bool wasLegacy = false;
+        if (string.IsNullOrEmpty(preset.EncryptedApiKey))
+        {
+            plainKey = string.Empty;
+        }
+        else
+        {
+            plainKey = AesKeyProtector.TryDecrypt(preset.EncryptedApiKey, password, out wasLegacy);
+        }
 
         // 복호화 실패면 LastUsedAt 갱신 안 함 — 실패 기록을 남기지 않음
         if (plainKey is null) return (preset, null);
+
+        // [M-C] v1 → v2 자동 마이그레이션 — 사용자 마찰 0. 같은 password로 재암호화하면
+        // 다음 로드부터 v2 경로로 진입하며 PBKDF2 600k가 적용된다.
+        if (wasLegacy && !string.IsNullOrEmpty(plainKey))
+        {
+            preset.EncryptedApiKey = AesKeyProtector.Encrypt(plainKey, password);
+            StartupLogger.Log($"[AiPresetStore] '{preset.Name}' 프리셋 v1→v2 자동 마이그레이션 완료");
+        }
 
         preset.LastUsedAt = DateTime.UtcNow;
         await _lock.WaitAsync();

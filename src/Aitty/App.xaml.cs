@@ -47,6 +47,12 @@ public partial class App : Application
         StartupLogger.Log($"[App.OnStartup] args.Length={e.Args.Length}");
         StartupLogger.Log($"[App.OnStartup] AI API 로그: {AiRequestLogger.LogPath}");
 
+#if DEBUG
+        // [M-C] Debug 빌드 전용 — AesKeyProtector v2 포맷/마이그레이션 invariant 자가 검증.
+        // Release 빌드에는 미컴파일되어 부팅 영향 0.
+        AesKeyProtector.SelfTest();
+#endif
+
         if (e.Args.Length > 0)
         {
             StartupConnection = PuttyArgParser.Parse(e.Args);
