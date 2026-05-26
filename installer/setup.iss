@@ -1,6 +1,12 @@
 ; =============================================================================
-;  Aitty SSH Terminal - Inno Setup Script v0.4.2
+;  Aitty SSH Terminal - Inno Setup Script v0.4.3
 ;  Compile: ISCC.exe setup.iss
+;
+;  변경사항 (v0.4.3 — 보안 일괄 패치 S2~S5 마무리):
+;    - S2: PuttyArgParser char[] 일관화 / Passphrase char[] / bash -c -- / Release F12 차단
+;    - S3: WebView2 JS Console 마스킹 / SSH known_hosts TOFU 검증
+;    - S4: AesKeyProtector v2 포맷 + PBKDF2 100k→600k (OWASP 2023) 자동 마이그레이션
+;    - S5(L-1): 인스톨러 만료 가드 (2026-10-25, 앱 측 가드와 동일)
 ;
 ;  변경사항 (v0.4.2 — 만료 가드 + WebView2 우클릭 제한):
 ;    - 프로토타입 만료 가드: 2026-10-25 이후 첫 실행 시 안내 팝업 → 종료
@@ -22,7 +28,7 @@
 ; =============================================================================
 
 #define AppName      "Aitty SSH Terminal"
-#define AppVersion   "0.4.2"
+#define AppVersion   "0.4.3"
 #define AppPublisher "Shinhan DS AX"
 #define AppExeName   "Aitty.exe"
 #define AppId        "{{8A3F2E1B-4C5D-4E6F-9A0B-1C2D3E4F5A6B}"
@@ -30,6 +36,11 @@
 #define RedistDir    "redist"
 ; WebView2 최소 필요 버전 (IsNonClientRegionSupportEnabled 등 최신 API 지원)
 #define WebView2MinMajor "117"
+; 프로토타입 만료일 — App.xaml.cs PrototypeExpiry와 수동 동기화 필수
+; (시스템 시계 조작 우회는 의도된 한계 — 베타 만료 안내 목적, 보안 기능 아님)
+#define ExpiryYear   "2026"
+#define ExpiryMonth  "10"
+#define ExpiryDay    "25"
 
 [Setup]
 AppId={#AppId}
@@ -162,12 +173,27 @@ end;
 
 // ── 설치 전 체크 ───────────────────────────────────────────────────────────
 function InitializeSetup: Boolean;
+var
+  CurDate, ExpDate: TDateTime;
 begin
   Result := True;
 
   // Windows 버전 체크 (18362 = Win10 1903)
   if not (GetWindowsVersion >= $0A002E22) then begin
     MsgBox('Windows 10 버전 1903 이상이 필요합니다.' + #13#10 + '현재 Windows를 업데이트해 주세요.', mbError, MB_OK);
+    Result := False;
+    Exit;
+  end;
+
+  // [L-1] 베타 만료 가드 — App.xaml.cs PrototypeExpiry와 동일 정책 (일 단위 비교)
+  ExpDate := EncodeDate({#ExpiryYear}, {#ExpiryMonth}, {#ExpiryDay});
+  CurDate := Trunc(Now);
+  if CurDate > ExpDate then begin
+    MsgBox(
+      '{#AppName}' + ' 프로토타입의 설치 기한이 만료되었습니다.' + #13#10 +
+      '(만료일: {#ExpiryYear}-{#ExpiryMonth}-{#ExpiryDay})' + #13#10 + #13#10 +
+      '최신 버전은 관리자에게 문의해 주십시오.',
+      mbInformation, MB_OK);
     Result := False;
     Exit;
   end;
