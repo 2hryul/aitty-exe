@@ -225,15 +225,22 @@ public partial class MainWindow : Window
             };
 
             // JS 콘솔/예외 캡처 (DevTools Protocol) — 흰 화면 원인 중 React 런타임 오류 진단
+            // [M-B] ParameterObjectAsJson은 외부 라이브러리(xterm, React DevTools 등)가 흘리는
+            //       Bearer/sk-/AIza 등 토큰을 그대로 담을 수 있으므로 SensitiveDataMasker 통과 필수.
+            //       Release 빌드는 error/warning만 캡처(정보성 console.log 잡음 + 키 평문 노출 표면 축소).
             try
             {
                 await webView.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.enable", "{}");
                 webView.CoreWebView2.GetDevToolsProtocolEventReceiver("Runtime.consoleAPICalled")
                     .DevToolsProtocolEventReceived += (s, args) =>
-                        StartupLogger.Log($"[JS Console] {args.ParameterObjectAsJson}");
+                    {
+                        var raw = args.ParameterObjectAsJson;
+                        if (!ShouldCaptureConsole(raw)) return;
+                        StartupLogger.Log($"[JS Console] {SensitiveDataMasker.Mask(raw)}");
+                    };
                 webView.CoreWebView2.GetDevToolsProtocolEventReceiver("Runtime.exceptionThrown")
                     .DevToolsProtocolEventReceived += (s, args) =>
-                        StartupLogger.Log($"[JS Exception] {args.ParameterObjectAsJson}");
+                        StartupLogger.Log($"[JS Exception] {SensitiveDataMasker.Mask(args.ParameterObjectAsJson)}");
                 StartupLogger.Log("[WebView2] DevTools Protocol Runtime 핸들러 등록 완료");
             }
             catch (Exception ex)
@@ -431,6 +438,25 @@ public partial class MainWindow : Window
         _aiManager.Dispose();
         webView.Dispose();
         base.OnClosed(e);
+    }
+
+    /// <summary>
+    /// [M-B] DevTools Protocol Runtime.consoleAPICalled 이벤트의 type 필드를 확인.
+    /// Release 빌드에서는 error/warning만 캡처해 latest.log 잡음과 키 평문 노출 표면을 줄인다.
+    /// DEBUG 빌드는 모두 캡처(개발 중 console.log/info 필요).
+    /// JSON 파싱 대신 substring 스캔 — 핫패스 비용 회피 + DevTools 스키마가 안정적.
+    /// </summary>
+    private static bool ShouldCaptureConsole(string paramJson)
+    {
+#if DEBUG
+        return true;
+#else
+        if (string.IsNullOrEmpty(paramJson)) return false;
+        // DevTools 스키마: {"type":"error", ...} — 항상 따옴표로 감싸진 문자열 값.
+        return paramJson.Contains("\"type\":\"error\"", StringComparison.Ordinal)
+            || paramJson.Contains("\"type\":\"warning\"", StringComparison.Ordinal)
+            || paramJson.Contains("\"type\":\"assert\"", StringComparison.Ordinal);
+#endif
     }
 }
 

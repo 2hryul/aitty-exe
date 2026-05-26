@@ -1,6 +1,8 @@
 ﻿using System.IO;
 using System.Text.RegularExpressions;
+using System.Windows;
 using Renci.SshNet;
+using Renci.SshNet.Common;
 using Aitty.Models;
 
 namespace Aitty.Services;
@@ -19,6 +21,9 @@ public class SshService : IDisposable
     private readonly object _bufferLock = new(); // _recentLines, _lastOutputBuffer 보호
     private readonly SshConnectionState _state = new();
     private readonly Queue<string> _recentLines = new();
+
+    // [L-3] 호스트키 영속화 — SshService 단일 인스턴스 패턴이라 인스턴스 필드로 충분.
+    private readonly KnownHostsStore _knownHosts = new();
 
     // SSH 셸 출력 누적 버퍼 — AI "마지막 출력 분석"용. MaxLastOutputLines 한도로 자연 슬라이딩 윈도우.
     // 2026-05-25: 이전 `_collectingOutput` 게이트는 사용자 Enter 외 케이스(자동 명령/IPC 타이밍)에서
@@ -128,6 +133,10 @@ public class SshService : IDisposable
                 _client.KeepAliveInterval = TimeSpan.FromSeconds(15);
                 // 원격 측 연결 종료 즉시 감지
                 _client.ErrorOccurred += (_, _) => { _state.IsConnected = false; };
+
+                // [L-3] 호스트키 검증 (TOFU + 변경 감지) — Connect() 호출 전 핸들러 등록 필수.
+                _client.HostKeyReceived += (_, e) => VerifyHostKey(connection, e);
+
                 _client.Connect();
                 _shellStream = _client.CreateShellStream("xterm", 120, 40, 800, 600, 4096);
                 // 셸 스트림 에러(exit 등) 즉시 감지
@@ -339,4 +348,91 @@ public class SshService : IDisposable
         }
         return Path.GetFullPath(path);
     }
+
+    /// <summary>
+    /// [L-3] HostKeyReceived 콜백 — TOFU + 변경 감지.
+    ///   첫 연결 → 자동 신뢰 + 저장
+    ///   동일 키 → 자동 통과
+    ///   변경 감지 → 사용자 confirm (MITM 가능성 경고)
+    /// SSH.NET 2025.1.0의 FingerPrintSHA256은 OpenSSH 표준 형식(base64, no padding, no prefix).
+    /// </summary>
+    private void VerifyHostKey(SshConnection connection, HostKeyEventArgs e)
+    {
+        try
+        {
+            var fp = e.FingerPrintSHA256 ?? string.Empty;
+            var keyType = e.HostKeyName ?? string.Empty;
+            var existing = _knownHosts.Lookup(connection.Host, connection.Port);
+
+            if (existing is null)
+            {
+                _knownHosts.Save(connection.Host, connection.Port, keyType, fp);
+                e.CanTrust = true;
+                StartupLogger.Log($"[SSH] 신규 호스트키 신뢰(TOFU): {connection.Host}:{connection.Port} ({keyType}, SHA256:{Preview(fp)})");
+                return;
+            }
+
+            if (existing.Fingerprint == fp && existing.KeyType == keyType)
+            {
+                e.CanTrust = true;
+                return;
+            }
+
+            var trusted = PromptHostKeyChange(connection.Host, connection.Port, existing, keyType, fp);
+            if (trusted)
+            {
+                _knownHosts.Save(connection.Host, connection.Port, keyType, fp);
+                e.CanTrust = true;
+                StartupLogger.Log($"[SSH] 호스트키 변경 수락: {connection.Host}:{connection.Port}");
+            }
+            else
+            {
+                e.CanTrust = false;
+                StartupLogger.Log($"[SSH] 호스트키 변경 거부 — MITM 가능성: {connection.Host}:{connection.Port}");
+            }
+        }
+        catch (Exception ex)
+        {
+            // 검증 로직 자체가 실패하면 안전한 쪽(차단)으로 fallback.
+            e.CanTrust = false;
+            StartupLogger.Log($"[SSH] 호스트키 검증 실패 — 안전상 연결 차단: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// [L-3] 호스트키 변경 시 사용자 confirm 다이얼로그.
+    /// HostKeyReceived는 ConnectAsync 내부 Task.Run의 백그라운드 스레드에서 발화 →
+    /// MessageBox는 UI thread 필요. ConnectAsync는 await Task.Run(...)으로 호출되어
+    /// UI 스레드를 점유하지 않으므로 Dispatcher.Invoke 동기 호출에 데드락 위험 없음.
+    /// </summary>
+    private static bool PromptHostKeyChange(string host, int port, KnownHostEntry old, string newType, string newFp)
+    {
+        var app = Application.Current;
+        if (app is null)
+        {
+            // 콘솔/테스트 환경 등 UI 없음 → 안전상 거부.
+            StartupLogger.Log($"[SSH] UI 미가용 — 호스트키 변경 자동 거부: {host}:{port}");
+            return false;
+        }
+
+        return app.Dispatcher.Invoke(() =>
+        {
+            var msg =
+                $"SSH 호스트키가 변경됐습니다 — MITM(중간자 공격) 가능성\n\n" +
+                $"호스트: {host}:{port}\n" +
+                $"기존: {old.KeyType} SHA256:{Preview(old.Fingerprint)}\n" +
+                $"신규: {newType} SHA256:{Preview(newFp)}\n\n" +
+                $"확인된 변경(서버 재설치/키 교체)일 때만 [예] 선택.\n" +
+                $"의심스러우면 [아니오] → 관리자 확인 후 known_hosts 수동 삭제.";
+
+            return MessageBox.Show(msg, "SSH 호스트키 변경 감지",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No) == MessageBoxResult.Yes;
+        });
+    }
+
+    /// <summary>fingerprint 일부만 표시 — 전체는 known_hosts.json에서 확인 가능.</summary>
+    private static string Preview(string fingerprint) =>
+        string.IsNullOrEmpty(fingerprint) ? "(empty)" :
+        fingerprint.Length <= 16 ? fingerprint : fingerprint[..16] + "...";
 }

@@ -1,7 +1,6 @@
 using System.IO;
 using System.Net.Http;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Aitty.Services;
 
@@ -33,36 +32,12 @@ public static class AiRequestLogger
 
     private const int MaxBodyPreview = 2048; // 응답 본문 최대 기록 크기
 
-    // Bearer / sk-* / AIza* / UUID 스타일 토큰 마스킹 패턴
-    private static readonly Regex TokenPattern = new(
-        @"(Bearer\s+)([A-Za-z0-9\-_]{8})[A-Za-z0-9\-_]{4,}([A-Za-z0-9\-_]{4})",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-    private static readonly Regex ApiKeyJsonPattern = new(
-        @"""(api[_-]?key|apikey|authorization)""\s*:\s*""([^""]{8})[^""]{4,}([^""]{4})""",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-    // [C-1] 헤더 값 전체가 키인 경우(x-api-key 등) MaskSensitive 정규식이 매치하지 못해
-    //       평문 노출되는 문제를 차단. 이 화이트리스트의 헤더는 무조건 ***REDACTED***로 치환.
-    private static readonly HashSet<string> SensitiveHeaderNames =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "x-api-key", "authorization", "api-key", "x-api-token",
-            "x-goog-api-key", "anthropic-api-key", "openai-organization"
-        };
-
-    // [S-1] URL query string에 키를 싣는 provider(Gemini: ?key=...) 대응.
-    //       헤더 화이트리스트(C-1)만으로는 Gemini API 키가 RequestUri에 평문 노출됨.
-    //       앞 4자 + **** 형태로 마스킹해 디버깅 식별성은 유지하되 키 전체 노출은 차단.
-    private static readonly Regex UrlKeyQueryPattern = new(
-        @"([?&](?:key|api[_-]?key|apikey|token|access[_-]?token)=)([^&\s]{4})[^&\s]+",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    // [M-B] 토큰/URL 키/헤더 화이트리스트는 SensitiveDataMasker로 단일화.
+    //       기존 (C-1) 헤더 화이트리스트 + (S-1) URL query 마스킹 동작은 유지하되,
+    //       JS Console 로거(StartupLogger 우회 경로)와 같은 로직을 공유한다.
 
     private static string MaskUri(System.Uri? uri) =>
-        uri is null
-            ? "(null)"
-            : UrlKeyQueryPattern.Replace(uri.ToString(),
-                m => $"{m.Groups[1].Value}{m.Groups[2].Value}****");
+        uri is null ? "(null)" : SensitiveDataMasker.MaskUrl(uri.ToString());
 
     public static void Initialize()
     {
@@ -117,9 +92,9 @@ public static class AiRequestLogger
 
             foreach (var h in request.Headers)
             {
-                var rendered = SensitiveHeaderNames.Contains(h.Key)
+                var rendered = SensitiveDataMasker.IsSensitiveHeader(h.Key)
                     ? "***REDACTED***"
-                    : MaskSensitive(string.Join(", ", h.Value));
+                    : SensitiveDataMasker.Mask(string.Join(", ", h.Value));
                 sb.AppendLine($"  {h.Key}: {rendered}");
             }
             if (request.Content is not null)
@@ -130,7 +105,7 @@ public static class AiRequestLogger
 
             if (!string.IsNullOrEmpty(bodyJson))
             {
-                var masked = MaskSensitive(bodyJson);
+                var masked = SensitiveDataMasker.Mask(bodyJson);
                 sb.AppendLine("  BODY:");
                 sb.AppendLine("    " + Truncate(masked).Replace("\n", "\n    "));
             }
@@ -157,7 +132,7 @@ public static class AiRequestLogger
                 sb.AppendLine($"[RESPONSE {DateTime.Now:HH:mm:ss.fff}] {(int)response.StatusCode} {response.StatusCode} elapsed={elapsedMs}ms");
                 foreach (var h in response.Headers)
                 {
-                    var rendered = SensitiveHeaderNames.Contains(h.Key)
+                    var rendered = SensitiveDataMasker.IsSensitiveHeader(h.Key)
                         ? "***REDACTED***"
                         : string.Join(", ", h.Value);
                     sb.AppendLine($"  {h.Key}: {rendered}");
@@ -170,7 +145,7 @@ public static class AiRequestLogger
                 if (!string.IsNullOrEmpty(bodyText))
                 {
                     sb.AppendLine("  BODY:");
-                    sb.AppendLine("    " + Truncate(MaskSensitive(bodyText)).Replace("\n", "\n    "));
+                    sb.AppendLine("    " + Truncate(SensitiveDataMasker.Mask(bodyText)).Replace("\n", "\n    "));
                 }
             }
             Append(sb.ToString().TrimEnd());
@@ -215,12 +190,4 @@ public static class AiRequestLogger
 
     private static string Truncate(string s) =>
         s.Length > MaxBodyPreview ? s[..MaxBodyPreview] + $"... ({s.Length - MaxBodyPreview} more chars)" : s;
-
-    private static string MaskSensitive(string input)
-    {
-        if (string.IsNullOrEmpty(input)) return input;
-        var s = TokenPattern.Replace(input, m => $"{m.Groups[1].Value}{m.Groups[2].Value}****...****{m.Groups[3].Value}");
-        s = ApiKeyJsonPattern.Replace(s, m => $"\"{m.Groups[1].Value}\":\"{m.Groups[2].Value}****...****{m.Groups[3].Value}\"");
-        return s;
-    }
 }
