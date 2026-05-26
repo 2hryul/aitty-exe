@@ -42,6 +42,28 @@ public static class AiRequestLogger
         @"""(api[_-]?key|apikey|authorization)""\s*:\s*""([^""]{8})[^""]{4,}([^""]{4})""",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // [C-1] 헤더 값 전체가 키인 경우(x-api-key 등) MaskSensitive 정규식이 매치하지 못해
+    //       평문 노출되는 문제를 차단. 이 화이트리스트의 헤더는 무조건 ***REDACTED***로 치환.
+    private static readonly HashSet<string> SensitiveHeaderNames =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "x-api-key", "authorization", "api-key", "x-api-token",
+            "x-goog-api-key", "anthropic-api-key", "openai-organization"
+        };
+
+    // [S-1] URL query string에 키를 싣는 provider(Gemini: ?key=...) 대응.
+    //       헤더 화이트리스트(C-1)만으로는 Gemini API 키가 RequestUri에 평문 노출됨.
+    //       앞 4자 + **** 형태로 마스킹해 디버깅 식별성은 유지하되 키 전체 노출은 차단.
+    private static readonly Regex UrlKeyQueryPattern = new(
+        @"([?&](?:key|api[_-]?key|apikey|token|access[_-]?token)=)([^&\s]{4})[^&\s]+",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static string MaskUri(System.Uri? uri) =>
+        uri is null
+            ? "(null)"
+            : UrlKeyQueryPattern.Replace(uri.ToString(),
+                m => $"{m.Groups[1].Value}{m.Groups[2].Value}****");
+
     public static void Initialize()
     {
         if (_initialized) return;
@@ -90,11 +112,16 @@ public static class AiRequestLogger
         {
             var sb = new StringBuilder();
             sb.AppendLine(new string('=', 60));
-            sb.AppendLine($"[REQUEST {DateTime.Now:HH:mm:ss.fff}] {request.Method} {request.RequestUri}");
+            sb.AppendLine($"[REQUEST {DateTime.Now:HH:mm:ss.fff}] {request.Method} {MaskUri(request.RequestUri)}");
             if (!string.IsNullOrEmpty(note)) sb.AppendLine($"  NOTE: {note}");
 
             foreach (var h in request.Headers)
-                sb.AppendLine($"  {h.Key}: {MaskSensitive(string.Join(", ", h.Value))}");
+            {
+                var rendered = SensitiveHeaderNames.Contains(h.Key)
+                    ? "***REDACTED***"
+                    : MaskSensitive(string.Join(", ", h.Value));
+                sb.AppendLine($"  {h.Key}: {rendered}");
+            }
             if (request.Content is not null)
             {
                 foreach (var h in request.Content.Headers)
@@ -129,7 +156,12 @@ public static class AiRequestLogger
             {
                 sb.AppendLine($"[RESPONSE {DateTime.Now:HH:mm:ss.fff}] {(int)response.StatusCode} {response.StatusCode} elapsed={elapsedMs}ms");
                 foreach (var h in response.Headers)
-                    sb.AppendLine($"  {h.Key}: {string.Join(", ", h.Value)}");
+                {
+                    var rendered = SensitiveHeaderNames.Contains(h.Key)
+                        ? "***REDACTED***"
+                        : string.Join(", ", h.Value);
+                    sb.AppendLine($"  {h.Key}: {rendered}");
+                }
                 if (response.Content is not null)
                 {
                     foreach (var h in response.Content.Headers)

@@ -80,6 +80,13 @@ public class IpcHandler
     // [M-1] IPC 메시지 최대 크기: 1MB
     private const int MaxMessageBytes = 1_048_576;
 
+    // [H-2] security:run 으로 호출 가능한 함수명 화이트리스트 — check_u01~99, fix_u01~99 만 허용.
+    // 정규식 통과 후 명령 보간 시점에 다른 인자가 끼어드는 문제를 막기 위해 단일 화이트리스트로 통일.
+    private static readonly HashSet<string> AllowedSecurityFunctions =
+        Enumerable.Range(1, 99)
+            .SelectMany(n => new[] { $"check_u{n:D2}", $"fix_u{n:D2}" })
+            .ToHashSet(StringComparer.Ordinal);
+
     private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         IpcResponse response;
@@ -117,7 +124,20 @@ public class IpcHandler
         catch (Exception ex)
         {
             Debug.WriteLine($"[IPC] Unhandled error: {ex}");
-            response = new IpcResponse { Id = TryExtractId(e.WebMessageAsJson), Type = "error", Error = "An internal error occurred" };
+            // 도메인 예외(외부 API 4xx/5xx, 설정 누락 등)는 메시지를 그대로 전달해야
+            // 사용자가 원인을 진단할 수 있다 (예: Claude API "credit balance is too low",
+            // "API Key not configured"). 그 외 예상치 못한 시스템 예외만 내부 정보 노출
+            // 방지를 위해 일반 메시지로 마스킹.
+            var safeMsg = ex switch
+            {
+                System.Net.Http.HttpRequestException => ex.Message,
+                InvalidOperationException            => ex.Message,
+                NotSupportedException                => ex.Message,
+                ArgumentException                    => ex.Message,
+                TaskCanceledException                => ex.Message,
+                _                                    => "An internal error occurred"
+            };
+            response = new IpcResponse { Id = TryExtractId(e.WebMessageAsJson), Type = "error", Error = safeMsg };
         }
 
         _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(response, JsonOptions));
@@ -224,10 +244,17 @@ public class IpcHandler
             Port       = req.Port,
             Username   = req.Username,
             PrivateKey = req.PrivateKey,
-            Password   = req.Password,
+            // [H-3] Password는 char[]로 보관 — 사용 직후 SshService에서 0으로 덮어쓴다.
+            // SshConnectRequest DTO의 Password는 string 유지 (JSON 역직렬화 short-lived).
+            Password   = string.IsNullOrEmpty(req.Password) ? null : req.Password.ToCharArray(),
             Passphrase = req.Passphrase,
         };
         var success = await _sshService.ConnectAsync(conn);
+
+        // [S-2] Connect 실패 시 conn은 _state.Connection으로 보관되지 않으므로
+        //       호출자가 명시적으로 Dispose해야 char[] Password가 0으로 정리됨.
+        //       성공 시에는 _state.Connection이 소유하므로 Disconnect/앱종료 경로에서 정리된다.
+        if (!success) conn.Dispose();
 
         // [M-3] 접속 감사 로그
         _ = SshAuditLogger.LogConnectAsync(
@@ -789,7 +816,8 @@ public class IpcHandler
             host = _startupConnection.Host,
             port = _startupConnection.Port,
             username = _startupConnection.Username,
-            hasPassword = !string.IsNullOrEmpty(_startupConnection.Password),
+            // [H-3] Password는 char[] — Length 기반으로 존재 여부만 노출 (값은 frontend로 보내지 않음)
+            hasPassword = _startupConnection.Password is { Length: > 0 },
             hasPrivateKey = !string.IsNullOrEmpty(_startupConnection.PrivateKey),
         };
     }
@@ -911,10 +939,12 @@ public class IpcHandler
             Renci.SshNet.SftpClient sftp;
             Renci.SshNet.SshClient  tempSsh;
 
-            if (!string.IsNullOrEmpty(conn.Password))
+            // [H-3] Password는 char[] — SSH.NET은 string만 받으므로 사용 시점에 임시 string 생성.
+            if (conn.Password is { Length: > 0 } pw)
             {
-                sftp    = new Renci.SshNet.SftpClient(conn.Host, conn.Port, conn.Username, conn.Password);
-                tempSsh = new Renci.SshNet.SshClient(conn.Host, conn.Port, conn.Username, conn.Password);
+                var pwStr = new string(pw);
+                sftp    = new Renci.SshNet.SftpClient(conn.Host, conn.Port, conn.Username, pwStr);
+                tempSsh = new Renci.SshNet.SshClient(conn.Host, conn.Port, conn.Username, pwStr);
             }
             else
             {
@@ -965,8 +995,8 @@ public class IpcHandler
         if (string.IsNullOrEmpty(data.Function))
             throw new ArgumentException("Function name required");
 
-        // 허용된 함수명만 통과 (check_u03, fix_u07 등)
-        if (!System.Text.RegularExpressions.Regex.IsMatch(data.Function, @"^(check|fix)_u\d{2}$"))
+        // [H-2] 허용된 함수명 화이트리스트만 통과 — 명령 주입 표면 차단.
+        if (!AllowedSecurityFunctions.Contains(data.Function))
             throw new ArgumentException($"Invalid function: {data.Function}");
 
         var scriptFile = data.Function.StartsWith("check") ? "check.sh" : "fix.sh";
@@ -1034,6 +1064,16 @@ public class IpcHandler
     private async Task<object> HandleLogsFetchFile(object? payload)
     {
         var data = DeserializePayload<LogFetchFilePayload>(payload);
+
+        // [M-2] 경로 검증 — shell metacharacter / Windows 경로 구분자 / 개행 차단.
+        // Linux 절대경로 `/`는 허용. `\` 는 금지 (Linux 서버 대상이므로).
+        if (string.IsNullOrWhiteSpace(data.Path))
+            throw new ArgumentException("Path is empty");
+        if (data.Path.Length > 4096)
+            throw new ArgumentException("Path too long (max 4096 chars)");
+        if (data.Path.IndexOfAny(new[] { '\n', '\r', '`', '$', ';', '|', '&', '<', '>', '"', '\'', '\\' }) >= 0)
+            throw new ArgumentException("Path contains forbidden characters");
+
         var result = await _logCollector.FetchFileAsync(data.Path, data.TailBytes, data.FullFile);
 
         // 감사 로그 (fire-and-forget)
@@ -1324,13 +1364,26 @@ public class IpcHandler
             : new Renci.SshNet.PrivateKeyFile(keyPath, conn.Passphrase);
     }
 
+    // [M-1] payload 검증 강화 — null/문자열/객체 입력 모두 ArgumentException 으로 통일.
+    // OnWebMessageReceived의 catch 화이트리스트가 ArgumentException 메시지를 그대로 전달하므로
+    // 사용자에게 "어떤 페이로드가 왜 잘못됐는지" 의미 있는 메시지가 노출된다.
     private static T DeserializePayload<T>(object? payload) where T : class
     {
-        if (payload is JsonElement element)
-            return JsonSerializer.Deserialize<T>(element.GetRawText(), JsonOptions) ?? throw new ArgumentException($"Failed to deserialize {typeof(T).Name}");
-
-        var json = JsonSerializer.Serialize(payload, JsonOptions);
-        return JsonSerializer.Deserialize<T>(json, JsonOptions) ?? throw new ArgumentException($"Failed to deserialize {typeof(T).Name}");
+        if (payload is null)
+            throw new ArgumentException($"Payload required for {typeof(T).Name}");
+        try
+        {
+            // string으로 들어온 경우(레거시 호출자) 그대로 파싱, 그 외(JsonElement/anonymous)는 재직렬화.
+            var json = payload is string s ? s : JsonSerializer.Serialize(payload, JsonOptions);
+            var result = JsonSerializer.Deserialize<T>(json, JsonOptions);
+            if (result is null)
+                throw new ArgumentException($"Failed to deserialize payload as {typeof(T).Name}");
+            return result;
+        }
+        catch (JsonException ex)
+        {
+            throw new ArgumentException($"Invalid payload for {typeof(T).Name}: {ex.Message}");
+        }
     }
 
     private static string TryExtractId(string json)

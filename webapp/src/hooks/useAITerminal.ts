@@ -348,7 +348,18 @@ export function useAITerminal(): UseAITerminalReturn {
       if (providerInfo?.requiresApiKey) {
         step(2, totalSteps, 'API Key 구성 적용')
         if (!apiKey.trim()) {
-          warn('API Key가 비어 있습니다.')
+          // 프리셋 로드 직후 등 UI에는 평문 키가 없지만 백엔드는 이미 보유 중인 케이스.
+          // 단순 warn은 사용자에게 "키 없음"으로 오해를 주므로 백엔드 상태로 확인 후 분기.
+          try {
+            const pre = await ai.state()
+            if (pre.isConfigured) {
+              ok('API Key는 프리셋/이전 세션에서 이미 적용됨 (재적용 생략)')
+            } else {
+              warn('API Key가 비어 있습니다.')
+            }
+          } catch {
+            warn('API Key가 비어 있습니다.')
+          }
         } else {
           await ai.setApiKey(activeProvider, apiKey.trim())
           ok('API Key 적용 완료')

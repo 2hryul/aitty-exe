@@ -182,8 +182,9 @@ public class LogCollectorService
     /// </summary>
     private static SftpClient CreateSftpClient(Models.SshConnection conn)
     {
-        if (!string.IsNullOrEmpty(conn.Password))
-            return new SftpClient(conn.Host, conn.Port, conn.Username, conn.Password);
+        // [H-3] Password는 char[] — SftpClient는 string만 받으므로 사용 시점에 임시 string 생성.
+        if (conn.Password is { Length: > 0 } pw)
+            return new SftpClient(conn.Host, conn.Port, conn.Username, new string(pw));
 
         var keyFile = CreatePrivateKeyFile(conn);
         return new SftpClient(conn.Host, conn.Port, conn.Username, keyFile);

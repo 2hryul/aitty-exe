@@ -101,7 +101,8 @@ public static class PuttyArgParser
             Host = host,
             Port = port,
             Username = username ?? string.Empty,
-            Password = password,
+            // [H-3] Password는 char[]로 보관 — 사용 후 SshService에서 0으로 덮어쓴다
+            Password = string.IsNullOrEmpty(password) ? null : password.ToCharArray(),
             PrivateKey = privateKey,
         };
     }

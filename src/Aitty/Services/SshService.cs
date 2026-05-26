@@ -99,9 +99,14 @@ public class SshService : IDisposable
                     authMethods.Add(new PrivateKeyAuthenticationMethod(connection.Username, keyFile));
                 }
 
-                if (!string.IsNullOrEmpty(connection.Password))
+                // [H-3] Password는 char[]로 보관 — 사용 시점에만 string 카피본 생성.
+                // SSH.NET이 PasswordAuthenticationMethod 내부에서 string 사본을 또 만들기 때문에
+                // 라이브러리 측 메모리는 .NET 한계로 정리 불가(known limitation).
+                // char[] 본체는 SshConnection.Dispose()에서 Array.Clear로 0 덮어쓰기.
+                if (connection.Password is { Length: > 0 } pw)
                 {
-                    authMethods.Add(new PasswordAuthenticationMethod(connection.Username, connection.Password));
+                    var pwStr = new string(pw);
+                    authMethods.Add(new PasswordAuthenticationMethod(connection.Username, pwStr));
                 }
 
                 var connInfo = new ConnectionInfo(connection.Host, connection.Port, connection.Username, authMethods.ToArray())

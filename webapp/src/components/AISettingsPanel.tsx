@@ -102,6 +102,18 @@ export function AISettingsPanel({
     setSelectedPreset('')
   }
 
+  // [H-1] SSL 검증 비활성화는 영구 저장되므로(Owner 결정) 활성화 시 1회 경고. 비활성화 전환은 경고 없이 즉시 적용.
+  const handleSslToggle = (next: boolean) => {
+    if (next) {
+      const ok = window.confirm(
+        '⚠ SSL 검증을 건너뛰면 중간자 공격(MITM)에 취약해집니다.\n\n' +
+        '사내 자체서명 인증서 환경에서만 사용하세요. 계속하시겠습니까?'
+      )
+      if (!ok) return
+    }
+    onAllowInsecureSslChange(next)
+  }
+
   return (
     <div className="llm-settings-panel">
       <div className="settings-grid">
@@ -291,7 +303,7 @@ export function AISettingsPanel({
           <input
             type="checkbox"
             checked={allowInsecureSsl}
-            onChange={(e) => onAllowInsecureSslChange(e.target.checked)}
+            onChange={(e) => handleSslToggle(e.target.checked)}
           />
           SSL 검증 건너뛰기
         </label>
