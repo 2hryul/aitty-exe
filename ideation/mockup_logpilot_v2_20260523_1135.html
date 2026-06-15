@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>LogPilot 탭 — 초보 운영자용 로그 분석 (v2)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  .mono { font-family: "Consolas", "D2Coding", monospace; }
+  .shell-block { background: #0f1729; color: #d4dbe6; }
+  .shell-block .err { color: #ff6b6b; }
+  .shell-block .warn { color: #ffd166; }
+  .shell-block .info { color: #6bcfff; }
+  .shell-block .dim { color: #6b7686; }
+  .traffic-red    { box-shadow: 0 0 0 4px rgba(239,68,68,0.15); }
+  .traffic-yellow { box-shadow: 0 0 0 4px rgba(234,179,8,0.15); }
+  .traffic-green  { box-shadow: 0 0 0 4px rgba(34,197,94,0.15); }
+  .scenario-card { transition: all 0.15s; }
+  .scenario-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); border-color: #0066cc; }
+  .action-chip { transition: background 0.15s; }
+  .action-chip:hover { background: #e6f0ff; border-color: #0066cc; color: #0052a3; }
+  .run-btn { transition: all 0.15s; }
+  .run-btn:hover { background: #047857; }
+  .tab-btn { transition: all 0.15s; }
+  .tab-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .tab-btn.active { background: #fff; color: #0f172a; }
+  /* 모달 */
+  .modal-backdrop { background: rgba(15,23,42,0.55); backdrop-filter: blur(2px); }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<!-- 안내 -->
+<div class="bg-amber-50 border-b border-amber-200 px-6 py-2 text-sm text-amber-900 flex items-center gap-3">
+  <span class="font-semibold">🎨 목업 v2</span>
+  <span class="text-amber-700">LogPilot 탭 (AI Chat 영역에 추가) · 사이드바 제거 / SSH 경로 기본값 / 사용자 확장 프리셋 / 권한 사전 체크</span>
+  <span class="ml-auto text-xs text-amber-600">2026-05-23</span>
+</div>
+
+<!-- ═══════════════════ Aitty 윈도우 시뮬레이션 ═══════════════════ -->
+<div class="flex h-[calc(100vh-2.5rem)] bg-white">
+
+  <!-- 좌측 좁은 아이콘 사이드바 (Aitty 실제 구조) -->
+  <aside class="w-12 bg-slate-100 border-r border-slate-200 flex flex-col items-center py-2 gap-1">
+    <button class="w-9 h-9 rounded text-slate-500 hover:bg-slate-200 flex items-center justify-center" title="채팅">💬</button>
+    <button class="w-9 h-9 rounded text-slate-500 hover:bg-slate-200 flex items-center justify-center" title="CLI">⌨️</button>
+    <button class="w-9 h-9 rounded text-slate-500 hover:bg-slate-200 flex items-center justify-center" title="보안">🛡</button>
+    <button class="w-9 h-9 rounded bg-blue-600 text-white flex items-center justify-center font-semibold" title="LogPilot">📋</button>
+  </aside>
+
+  <!-- AI Chat 패널 영역 -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+
+    <!-- 탭 헤더 -->
+    <header class="bg-slate-800 px-4 py-2 flex items-center gap-3 border-b border-slate-700">
+      <div class="flex items-center gap-2 text-white">
+        <span class="text-xl">📋</span>
+        <span class="font-semibold text-sm">LogPilot</span>
+        <span class="text-xs text-slate-400">— 초보자도 쉽게 로그 분석</span>
+      </div>
+      <div class="ml-auto flex items-center gap-2 text-xs">
+        <span class="px-2 py-1 rounded bg-green-900/40 text-green-300 border border-green-700/30">● ubuntu-prod01</span>
+        <span class="px-2 py-1 rounded bg-slate-700 text-slate-300">claude-haiku-4.5</span>
+      </div>
+    </header>
+
+    <!-- 본문 -->
+    <div class="flex-1 overflow-y-auto bg-slate-50">
+      <div class="max-w-4xl mx-auto px-5 py-5 space-y-4">
+
+        <!-- ═══════════ 로그 파일 경로 + SSH 현재 경로 기본값 (요청 #3) ═══════════ -->
+        <section class="bg-white rounded-lg border border-slate-200 p-4">
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-sm font-medium text-slate-700">📁 분석할 로그 파일</label>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="text-slate-500">SSH 현재 경로:</span>
+              <button class="px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 mono"
+                      title="클릭하면 입력란에 채워집니다"
+                      onclick="setPath('/home/admin/app/logs/')">
+                📍 /home/admin/app/logs/
+              </button>
+              <button class="p-1 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="다시 가져오기">🔄</button>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <input id="filepath" type="text" value="/home/admin/app/logs/error.log"
+                   class="flex-1 mono text-sm px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:outline-none">
+            <button class="text-sm px-3 py-2 border border-slate-300 rounded-md bg-white hover:bg-slate-50 flex items-center gap-1"
+                    onclick="document.getElementById('preset-panel').classList.toggle('hidden')">
+              <span>🔎 자주 쓰는 로그</span>
+              <span class="text-slate-400">▾</span>
+            </button>
+          </div>
+
+          <!-- 자주 쓰는 로그 프리셋 패널 (요청 #4) -->
+          <div id="preset-panel" class="mt-3 border border-slate-200 rounded-md bg-slate-50 p-3 hidden">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-xs font-semibold text-slate-700">자주 쓰는 로그 (Linux 기본 + 사용자 추가)</div>
+              <button class="text-xs text-blue-600 hover:underline" onclick="showAddPresetForm()">+ 새 경로 추가</button>
+            </div>
+
+            <!-- 기본 프리셋 (시스템 제공) -->
+            <div class="text-[10px] font-medium text-slate-400 uppercase tracking-wider mt-1 mb-1">시스템 기본 (Linux)</div>
+            <div class="space-y-0.5">
+              <button class="preset-row" onclick="setPath('/var/log/syslog')">
+                <span class="mono text-xs flex-1">/var/log/syslog</span>
+                <span class="text-xs text-slate-500">시스템 전체 메시지</span>
+              </button>
+              <button class="preset-row" onclick="setPath('/var/log/auth.log')">
+                <span class="mono text-xs flex-1">/var/log/auth.log</span>
+                <span class="text-xs text-slate-500">로그인·인증 기록</span>
+              </button>
+              <button class="preset-row" onclick="setPath('/var/log/kern.log')">
+                <span class="mono text-xs flex-1">/var/log/kern.log</span>
+                <span class="text-xs text-slate-500">커널 메시지</span>
+              </button>
+              <button class="preset-row" onclick="setPath('/var/log/nginx/access.log')">
+                <span class="mono text-xs flex-1">/var/log/nginx/access.log</span>
+                <span class="text-xs text-slate-500">nginx 접속 로그</span>
+              </button>
+              <button class="preset-row" onclick="setPath('/var/log/nginx/error.log')">
+                <span class="mono text-xs flex-1">/var/log/nginx/error.log</span>
+                <span class="text-xs text-slate-500">nginx 오류 로그</span>
+              </button>
+              <button class="preset-row" onclick="setPath('journalctl -xe')">
+                <span class="mono text-xs flex-1">journalctl -xe</span>
+                <span class="text-xs text-slate-500">systemd 통합 로그 (명령)</span>
+              </button>
+            </div>
+
+            <!-- 사용자 추가 프리셋 -->
+            <div class="text-[10px] font-medium text-slate-400 uppercase tracking-wider mt-3 mb-1">내가 추가한 경로</div>
+            <div class="space-y-0.5">
+              <div class="preset-row group">
+                <span class="mono text-xs flex-1 cursor-pointer" onclick="setPath('/home/admin/app/logs/error.log')">/home/admin/app/logs/error.log</span>
+                <span class="text-xs text-slate-500">앱 에러 로그</span>
+                <button class="text-slate-300 group-hover:text-red-500 text-xs ml-2" title="삭제">🗑</button>
+              </div>
+              <div class="preset-row group">
+                <span class="mono text-xs flex-1 cursor-pointer" onclick="setPath('/home/admin/app/logs/access.log')">/home/admin/app/logs/access.log</span>
+                <span class="text-xs text-slate-500">앱 접속 로그</span>
+                <button class="text-slate-300 group-hover:text-red-500 text-xs ml-2" title="삭제">🗑</button>
+              </div>
+            </div>
+
+            <!-- 새 경로 추가 폼 (접힘) -->
+            <div id="add-preset-form" class="hidden mt-3 border-t border-slate-200 pt-3 flex gap-2">
+              <input type="text" placeholder="경로 (예: /opt/myapp/log/app.log)"
+                     class="mono text-xs flex-1 px-2 py-1.5 border border-slate-300 rounded">
+              <input type="text" placeholder="설명 (예: 앱 메인 로그)"
+                     class="text-xs w-40 px-2 py-1.5 border border-slate-300 rounded">
+              <button class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700">저장</button>
+              <button class="text-xs text-slate-500 px-2 py-1.5" onclick="document.getElementById('add-preset-form').classList.add('hidden')">취소</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══════════ 시나리오 카드 (P1-a) ═══════════ -->
+        <section>
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="text-sm font-medium text-slate-700">⚡ 무엇이 궁금하세요?</h2>
+            <button class="text-xs text-slate-500 hover:underline">고급 모드 ▾</button>
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5" onclick="pickScenario('error', this)">
+              <div class="text-2xl mb-1.5">🔥</div>
+              <div class="font-semibold text-slate-800 text-sm">에러 났어요</div>
+              <div class="text-xs text-slate-500 mt-0.5">최근 ERROR / FATAL 메시지 검색</div>
+            </button>
+            <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5" onclick="pickScenario('slow', this)">
+              <div class="text-2xl mb-1.5">🐌</div>
+              <div class="font-semibold text-slate-800 text-sm">서버 느려요</div>
+              <div class="text-xs text-slate-500 mt-0.5">메모리·OOM·응답 지연 흔적</div>
+            </button>
+            <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5" onclick="pickScenario('disk', this)">
+              <div class="text-2xl mb-1.5">💾</div>
+              <div class="font-semibold text-slate-800 text-sm">디스크 부족</div>
+              <div class="text-xs text-slate-500 mt-0.5">No space / I/O error / inode</div>
+            </button>
+            <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5" onclick="pickScenario('login', this)">
+              <div class="text-2xl mb-1.5">🔐</div>
+              <div class="font-semibold text-slate-800 text-sm">로그인 의심</div>
+              <div class="text-xs text-slate-500 mt-0.5">실패한 SSH·비정상 접근</div>
+            </button>
+            <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5" onclick="pickScenario('yesterday', this)">
+              <div class="text-2xl mb-1.5">📅</div>
+              <div class="font-semibold text-slate-800 text-sm">어제 무슨 일?</div>
+              <div class="text-xs text-slate-500 mt-0.5">지난 24시간 주요 이벤트 요약</div>
+            </button>
+            <button class="scenario-card text-left bg-white border-2 border-blue-300 bg-blue-50 rounded-lg p-3.5" onclick="pickScenario('checkup', this)">
+              <div class="text-2xl mb-1.5">📊</div>
+              <div class="font-semibold text-slate-800 text-sm">지금 상태 점검</div>
+              <div class="text-xs text-slate-500 mt-0.5">서버가 괜찮은지 한 눈에 (추천)</div>
+            </button>
+          </div>
+        </section>
+
+        <!-- 선택된 시나리오 안내 + 실행 (요청 #5: 권한 사전 체크 트리거) -->
+        <section class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-center gap-3">
+          <span id="picked-icon" class="text-xl">📊</span>
+          <div class="flex-1">
+            <div class="text-sm font-medium text-slate-800">
+              <span id="picked-title">지금 상태 점검</span>
+              <span class="text-slate-500 font-normal"> · </span>
+              <span id="picked-detail" class="text-slate-600 text-xs">시스템 전반의 정상 동작 여부를 한 눈에 보여줍니다</span>
+            </div>
+          </div>
+          <button class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-1.5 rounded-md"
+                  onclick="checkPermissionAndStart()">
+            ▶ 분석 시작
+          </button>
+        </section>
+
+        <!-- ─── 권한 체크 결과 (성공) — 분석 진행 ───
+             요청 #5: 권한 사전 체크 → 성공 시 자동 진행, 실패 시 모달 -->
+        <section id="result-section" class="bg-white rounded-lg border border-slate-200 overflow-hidden hidden">
+          <!-- (분석 결과는 여기 — 이전 v1 목업과 동일한 신호등 + 4섹션 구조) -->
+          <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-green-50 to-white">
+            <div class="flex items-start gap-4">
+              <div class="w-14 h-14 rounded-full bg-green-500 traffic-green flex items-center justify-center text-white text-3xl flex-shrink-0">✓</div>
+              <div class="flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-semibold text-green-700 px-2 py-0.5 bg-green-100 rounded">정상</span>
+                  <span class="text-xs text-slate-500">2026-05-23 14:32 · 18.2 KB · 312 줄 · 3.1초 분석</span>
+                </div>
+                <h3 class="text-lg font-semibold text-slate-800 mt-1.5">서버는 현재 정상 작동 중입니다. 큰 문제는 없습니다.</h3>
+                <p class="text-sm text-slate-600 mt-1">최근 1시간 동안 ERROR 0건 / WARN 2건 / 평균 메모리 41% / 디스크 여유 충분.</p>
+              </div>
+            </div>
+          </div>
+          <div class="px-5 py-4 space-y-4 text-sm text-slate-700">
+            <div><strong class="text-slate-800">📌 결론:</strong> CPU/메모리/디스크 모두 정상 범위. 시스템 데몬은 모두 활성.</div>
+            <div><strong class="text-slate-800">🧭 관찰된 것:</strong> 14:01에 cron이 nightly backup을 정상 완료. 14:15에 logrotate 동작.</div>
+            <div><strong class="text-slate-800">🗓 권장:</strong> 추가 조치 불필요. 다음 점검은 8시간 후 권장.</div>
+          </div>
+        </section>
+
+        <!-- 푸터 -->
+        <div class="text-xs text-slate-500 text-center py-3">
+          ※ AI는 정확하지 않은 정보를 제공할 수 있습니다. 중요한 결정 전 원본 로그를 확인하세요.
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ═══════════════════ 권한 체크 실패 모달 (요청 #5 핵심) ═══════════════════ -->
+<div id="perm-modal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4">
+  <div class="bg-white rounded-lg shadow-2xl max-w-lg w-full overflow-hidden">
+    <div class="px-5 py-4 bg-red-50 border-b border-red-200 flex items-start gap-3">
+      <span class="text-2xl">🚫</span>
+      <div class="flex-1">
+        <div class="font-semibold text-slate-800">파일을 읽을 수 없습니다</div>
+        <div class="text-xs text-slate-600 mt-0.5 mono" id="perm-target">/var/log/syslog</div>
+      </div>
+      <button class="text-slate-400 hover:text-slate-700" onclick="hidePermModal()">✕</button>
+    </div>
+
+    <div class="px-5 py-4 space-y-3 text-sm text-slate-700">
+      <div>
+        <strong class="text-slate-800">진단:</strong>
+        <span id="perm-diagnosis">현재 사용자 <span class="mono text-xs bg-slate-100 px-1 py-0.5 rounded">admin</span>에게 이 파일의 <strong>읽기 권한</strong>이 없습니다.</span>
+      </div>
+
+      <div class="bg-slate-50 border border-slate-200 rounded-md p-3 text-xs">
+        <div class="text-slate-500 mb-1">파일 정보 (서버에서 확인됨)</div>
+        <div class="mono space-y-0.5">
+          <div>크기: <strong>2.1 MB</strong></div>
+          <div>소유자: <strong>root:adm</strong></div>
+          <div>권한: <strong>-rw-r-----</strong> (소유자만 읽기/쓰기, adm 그룹만 읽기)</div>
+        </div>
+      </div>
+
+      <div>
+        <strong class="text-slate-800">해결 방법 (선택)</strong>
+        <div class="mt-2 space-y-2">
+
+          <!-- 옵션 1: 그룹 추가 (권장) -->
+          <div class="border border-slate-200 rounded-md overflow-hidden">
+            <div class="px-3 py-1.5 bg-green-50 border-b border-green-100 flex items-center justify-between">
+              <span class="text-xs font-semibold text-green-800">① adm 그룹에 사용자 추가 (권장 · 일회성)</span>
+              <button class="run-btn bg-emerald-600 text-white text-xs px-2.5 py-0.5 rounded">▶ 실행</button>
+            </div>
+            <div class="px-3 py-1.5 text-[11px] text-slate-600 bg-amber-50 border-b border-amber-100">
+              💡 <strong>이 명령은:</strong> 현재 사용자를 adm 그룹에 추가합니다. 다시 SSH 접속 후 적용됩니다. <strong>sudo 권한이 필요합니다.</strong>
+            </div>
+            <pre class="mono text-xs px-3 py-2 text-slate-800">sudo usermod -aG adm $USER</pre>
+          </div>
+
+          <!-- 옵션 2: sudo로 한 번만 -->
+          <div class="border border-slate-200 rounded-md overflow-hidden">
+            <div class="px-3 py-1.5 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
+              <span class="text-xs font-semibold text-amber-800">② sudo로 이번만 읽기 (임시)</span>
+              <button class="run-btn bg-amber-600 text-white text-xs px-2.5 py-0.5 rounded">▶ 실행</button>
+            </div>
+            <div class="px-3 py-1.5 text-[11px] text-slate-700 bg-amber-100/50 border-b border-amber-200">
+              ⚠ <strong>주의:</strong> sudo를 사용하면 비밀번호 입력이 필요할 수 있습니다. 일회성 우회로만 사용하세요.
+            </div>
+            <pre class="mono text-xs px-3 py-2 text-slate-800">sudo cat /var/log/syslog | tail -n 5000 &gt; ~/syslog_copy.log</pre>
+          </div>
+
+          <!-- 옵션 3: 다른 파일 선택 -->
+          <div class="border border-slate-200 rounded-md px-3 py-2 flex items-center gap-2 bg-white">
+            <span class="text-xs font-semibold text-slate-700">③ 읽을 수 있는 다른 파일 선택</span>
+            <button class="ml-auto text-xs text-blue-600 hover:underline" onclick="hidePermModal()">자주 쓰는 로그에서 고르기 →</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+      <button class="text-xs text-slate-500 hover:underline">자세히 알아보기 (권한 모델)</button>
+      <div class="flex gap-2">
+        <button class="text-sm px-3 py-1.5 text-slate-700 hover:bg-slate-200 rounded" onclick="hidePermModal()">취소</button>
+        <button class="text-sm px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700" onclick="hidePermModal(); document.getElementById('result-section').classList.remove('hidden')">
+          그래도 분석 시도 (실패 가능)
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .preset-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 8px; border-radius: 4px;
+    width: 100%; text-align: left;
+    color: #475569;
+  }
+  .preset-row:hover { background: #e2e8f0; }
+</style>
+
+<script>
+const SCENARIOS = {
+  error:     { icon: '🔥', title: '에러 났어요',     detail: '최근 1시간 ERROR/FATAL/CRITICAL 메시지를 검색합니다' },
+  slow:      { icon: '🐌', title: '서버 느려요',     detail: '메모리 부족·OOM·응답 지연 흔적을 최근 6시간에서 탐색합니다' },
+  disk:      { icon: '💾', title: '디스크 부족',     detail: 'No space / I/O error / inode 경고 메시지를 찾습니다' },
+  login:     { icon: '🔐', title: '로그인 의심',     detail: '실패한 SSH 시도와 비정상 접근을 점검합니다' },
+  yesterday: { icon: '📅', title: '어제 무슨 일?',  detail: '지난 24시간 주요 이벤트를 요약합니다' },
+  checkup:   { icon: '📊', title: '지금 상태 점검', detail: '시스템 전반의 정상 동작 여부를 한 눈에 보여줍니다' },
+};
+
+function pickScenario(key, el) {
+  const s = SCENARIOS[key];
+  document.getElementById('picked-icon').textContent = s.icon;
+  document.getElementById('picked-title').textContent = s.title;
+  document.getElementById('picked-detail').textContent = s.detail;
+  document.querySelectorAll('.scenario-card').forEach(c => {
+    c.classList.remove('border-blue-300', 'bg-blue-50');
+    c.classList.add('border-slate-200');
+  });
+  el.classList.remove('border-slate-200');
+  el.classList.add('border-blue-300', 'bg-blue-50');
+}
+
+function setPath(p) {
+  document.getElementById('filepath').value = p;
+  // 패널 닫기
+  document.getElementById('preset-panel').classList.add('hidden');
+}
+
+function showAddPresetForm() {
+  document.getElementById('add-preset-form').classList.remove('hidden');
+}
+
+// 요청 #5: 분석 시작 시 권한 사전 체크
+function checkPermissionAndStart() {
+  const path = document.getElementById('filepath').value.trim();
+  // 데모: 'syslog' 또는 'auth.log'가 들어가면 권한 실패 시뮬레이션
+  const failsPermission = /syslog|auth\.log/.test(path);
+  if (failsPermission) {
+    document.getElementById('perm-target').textContent = path;
+    document.getElementById('perm-modal').classList.remove('hidden');
+  } else {
+    document.getElementById('result-section').classList.remove('hidden');
+    document.getElementById('result-section').scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+function hidePermModal() {
+  document.getElementById('perm-modal').classList.add('hidden');
+}
+</script>
+
+</body>
+</html>

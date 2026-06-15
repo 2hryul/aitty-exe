@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Aitty Log Tab — 초보 운영자 중심 재설계 목업</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  .mono { font-family: "Consolas", "D2Coding", monospace; }
+  .shell-block { background: #0f1729; color: #d4dbe6; }
+  .shell-block .err { color: #ff6b6b; }
+  .shell-block .warn { color: #ffd166; }
+  .shell-block .info { color: #6bcfff; }
+  .shell-block .dim { color: #6b7686; }
+  /* 신호등 글로우 */
+  .traffic-red    { box-shadow: 0 0 0 4px rgba(239,68,68,0.15); }
+  .traffic-yellow { box-shadow: 0 0 0 4px rgba(234,179,8,0.15); }
+  .traffic-green  { box-shadow: 0 0 0 4px rgba(34,197,94,0.15); }
+  /* 시나리오 카드 hover */
+  .scenario-card { transition: all 0.15s; }
+  .scenario-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); border-color: #0066cc; }
+  /* 액션 칩 */
+  .action-chip { transition: background 0.15s; }
+  .action-chip:hover { background: #e6f0ff; border-color: #0066cc; color: #0052a3; }
+  /* Run 버튼 */
+  .run-btn { transition: all 0.15s; }
+  .run-btn:hover { background: #047857; }
+  /* 히스토리 아이템 */
+  .history-item { transition: background 0.1s; cursor: pointer; }
+  .history-item:hover { background: #f1f5f9; }
+  .history-item.active { background: #e6f0ff; border-left: 3px solid #0066cc; }
+  /* 펄스 (분석 중) */
+  @keyframes pulse-soft { 0%,100% { opacity: 1 } 50% { opacity: 0.6 } }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<!-- 상단 데모 안내 바 -->
+<div class="bg-amber-50 border-b border-amber-200 px-6 py-2 text-sm text-amber-900 flex items-center gap-3">
+  <span class="font-semibold">🎨 목업</span>
+  <span class="text-amber-700">초보 운영자 중심 Log Tab 재설계 (Aitty v0.4 기준)</span>
+  <span class="ml-auto text-xs text-amber-600">2026-05-23 · 시나리오 카드 클릭 / 신호등 / Run 버튼 미리보기</span>
+</div>
+
+<div class="flex h-[calc(100vh-2.5rem)]">
+
+  <!-- ═══════════════════ 좌측: 분석 히스토리 (P4-a) ═══════════════════ -->
+  <aside class="w-64 bg-white border-r border-slate-200 flex flex-col">
+    <div class="px-4 py-3 border-b border-slate-200">
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">최근 분석</div>
+      <div class="text-xs text-slate-400 mt-0.5">최대 30일 보관</div>
+    </div>
+    <div class="flex-1 overflow-y-auto py-1">
+      <!-- 오늘 -->
+      <div class="px-4 py-1.5 text-xs font-medium text-slate-400">오늘</div>
+      <div class="history-item active px-4 py-2 border-l-[3px] border-transparent">
+        <div class="flex items-center gap-1.5 text-sm text-slate-800">
+          <span class="text-red-500">🔴</span>
+          <span class="truncate">에러 났어요</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-0.5">14:32 · /var/log/syslog</div>
+      </div>
+      <div class="history-item px-4 py-2 border-l-[3px] border-transparent">
+        <div class="flex items-center gap-1.5 text-sm text-slate-800">
+          <span class="text-green-500">🟢</span>
+          <span class="truncate">지금 상태 점검</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-0.5">11:08 · /var/log/syslog</div>
+      </div>
+      <!-- 어제 -->
+      <div class="px-4 py-1.5 mt-2 text-xs font-medium text-slate-400">어제</div>
+      <div class="history-item px-4 py-2 border-l-[3px] border-transparent">
+        <div class="flex items-center gap-1.5 text-sm text-slate-800">
+          <span class="text-yellow-500">🟡</span>
+          <span class="truncate">서버 느려요</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-0.5">16:55 · /var/log/syslog</div>
+      </div>
+      <div class="history-item px-4 py-2 border-l-[3px] border-transparent">
+        <div class="flex items-center gap-1.5 text-sm text-slate-800">
+          <span class="text-green-500">🟢</span>
+          <span class="truncate">로그인 의심</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-0.5">10:12 · /var/log/auth.log</div>
+      </div>
+      <div class="history-item px-4 py-2 border-l-[3px] border-transparent">
+        <div class="flex items-center gap-1.5 text-sm text-slate-800">
+          <span class="text-red-500">🔴</span>
+          <span class="truncate">디스크 부족</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-0.5">09:01 · /var/log/syslog</div>
+      </div>
+    </div>
+    <div class="px-4 py-2.5 border-t border-slate-200 text-xs text-slate-500">
+      📂 히스토리 폴더 열기
+    </div>
+  </aside>
+
+  <!-- ═══════════════════ 메인 ═══════════════════ -->
+  <main class="flex-1 overflow-y-auto">
+    <div class="max-w-5xl mx-auto px-6 py-5 space-y-4">
+
+      <!-- ─── 헤더 ─── -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center text-lg">📋</div>
+        <div>
+          <h1 class="text-lg font-semibold text-slate-800">로그 분석</h1>
+          <div class="text-xs text-slate-500">SSH로 접속한 서버의 로그를 쉽게 살펴봅니다</div>
+        </div>
+        <div class="ml-auto flex items-center gap-2 text-xs">
+          <span class="px-2 py-1 rounded bg-green-100 text-green-700">● 연결됨 · ubuntu-prod01</span>
+          <span class="px-2 py-1 rounded bg-slate-100 text-slate-600">claude-haiku-4.5</span>
+        </div>
+      </div>
+
+      <!-- ─── 로그 파일 경로 + 자동 발견(P1-b) ─── -->
+      <section class="bg-white rounded-lg border border-slate-200 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-sm font-medium text-slate-700">📁 로그 파일</label>
+          <button class="text-xs text-blue-600 hover:underline">🔍 서버에서 자동 찾기</button>
+        </div>
+        <div class="flex gap-2">
+          <input id="filepath" type="text" value="/var/log/syslog"
+                 class="flex-1 mono text-sm px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:outline-none">
+          <select class="text-sm px-3 py-2 border border-slate-300 rounded-md bg-white">
+            <option>🔎 자주 쓰는 로그 ▼</option>
+            <option>/var/log/syslog (시스템 전체)</option>
+            <option>/var/log/auth.log (로그인 기록)</option>
+            <option>/var/log/nginx/access.log (웹 접속)</option>
+            <option>/var/log/nginx/error.log (웹 오류)</option>
+            <option>journalctl -xe (systemd 로그)</option>
+          </select>
+        </div>
+        <div class="mt-2 text-xs text-slate-500 flex items-center gap-1">
+          <span>💡</span>
+          <span>이 서버에서 발견된 로그 파일: <strong class="text-slate-700">12개</strong> · 클릭하면 추천 목록을 봅니다</span>
+        </div>
+      </section>
+
+      <!-- ─── 시나리오 카드 (P1-a) — 진입의 핵심 ─── -->
+      <section>
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-sm font-medium text-slate-700">⚡ 무엇이 궁금하세요?</h2>
+          <button class="text-xs text-slate-500 hover:underline">고급 모드 ▾</button>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5"
+                  onclick="pickScenario('error', this)">
+            <div class="text-2xl mb-1.5">🔥</div>
+            <div class="font-semibold text-slate-800 text-sm">에러 났어요</div>
+            <div class="text-xs text-slate-500 mt-0.5">최근 ERROR / FATAL 메시지를 찾습니다</div>
+          </button>
+          <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5"
+                  onclick="pickScenario('slow', this)">
+            <div class="text-2xl mb-1.5">🐌</div>
+            <div class="font-semibold text-slate-800 text-sm">서버 느려요</div>
+            <div class="text-xs text-slate-500 mt-0.5">메모리 부족·OOM·응답 지연 흔적을 찾습니다</div>
+          </button>
+          <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5"
+                  onclick="pickScenario('disk', this)">
+            <div class="text-2xl mb-1.5">💾</div>
+            <div class="font-semibold text-slate-800 text-sm">디스크 부족</div>
+            <div class="text-xs text-slate-500 mt-0.5">No space / I/O error / inode 경고를 찾습니다</div>
+          </button>
+          <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5"
+                  onclick="pickScenario('login', this)">
+            <div class="text-2xl mb-1.5">🔐</div>
+            <div class="font-semibold text-slate-800 text-sm">로그인 의심</div>
+            <div class="text-xs text-slate-500 mt-0.5">실패한 SSH 시도·비정상 접근을 점검합니다</div>
+          </button>
+          <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5"
+                  onclick="pickScenario('yesterday', this)">
+            <div class="text-2xl mb-1.5">📅</div>
+            <div class="font-semibold text-slate-800 text-sm">어제 무슨 일?</div>
+            <div class="text-xs text-slate-500 mt-0.5">지난 24시간 주요 이벤트 요약</div>
+          </button>
+          <button class="scenario-card text-left bg-white border-2 border-slate-200 rounded-lg p-3.5 border-blue-300 bg-blue-50"
+                  onclick="pickScenario('checkup', this)">
+            <div class="text-2xl mb-1.5">📊</div>
+            <div class="font-semibold text-slate-800 text-sm">지금 상태 점검</div>
+            <div class="text-xs text-slate-500 mt-0.5">서버가 괜찮은지 한 눈에 (추천)</div>
+          </button>
+        </div>
+      </section>
+
+      <!-- ─── 선택된 시나리오 안내 + 실행 버튼 ─── -->
+      <section id="picked-bar" class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-center gap-3">
+        <span id="picked-icon" class="text-xl">🔥</span>
+        <div class="flex-1">
+          <div class="text-sm font-medium text-slate-800">
+            <span id="picked-title">에러 났어요</span>
+            <span class="text-slate-500 font-normal"> · </span>
+            <span id="picked-detail" class="text-slate-600 text-xs">/var/log/syslog 에서 최근 1시간 ERROR/FATAL/CRITICAL 메시지를 검색합니다</span>
+          </div>
+        </div>
+        <button id="run-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-1.5 rounded-md">
+          ▶ 분석 시작
+        </button>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!-- 분석 결과 (P2-a 신호등 + P2-b 4섹션)                          -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <section class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+
+        <!-- 신호등 헤더 (P2-a) — 1초 안에 판단 -->
+        <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-red-50 to-white">
+          <div class="flex items-start gap-4">
+            <div class="w-14 h-14 rounded-full bg-red-500 traffic-red flex items-center justify-center text-white text-3xl flex-shrink-0">
+              ⚠
+            </div>
+            <div class="flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-semibold text-red-700 px-2 py-0.5 bg-red-100 rounded">위험</span>
+                <span class="text-xs text-slate-500">2026-05-23 14:32 · 23.4 KB · 412 줄 · 4.2초 분석</span>
+              </div>
+              <h3 class="text-lg font-semibold text-slate-800 mt-1.5 leading-snug">
+                메모리 부족으로 <span class="text-red-700">MySQL 프로세스가 OOM Killer에 의해 강제 종료</span>되었습니다.
+              </h3>
+              <p class="text-sm text-slate-600 mt-1">서비스 영향 가능성이 있습니다. 아래 "지금 할 일"의 첫 번째 명령부터 확인하세요.</p>
+            </div>
+            <div class="flex gap-1 flex-shrink-0">
+              <button class="text-slate-400 hover:text-slate-700 p-1.5 rounded hover:bg-slate-100" title="복사">📋</button>
+              <button class="text-slate-400 hover:text-slate-700 p-1.5 rounded hover:bg-slate-100" title=".md 저장">💾</button>
+              <button class="text-slate-400 hover:text-slate-700 p-1.5 rounded hover:bg-slate-100" title="공유">🔗</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4섹션 본문 (P2-b) -->
+        <div class="px-5 py-4 space-y-5">
+
+          <!-- 섹션 1: 결론 -->
+          <div>
+            <h4 class="text-sm font-semibold text-slate-800 mb-1.5 flex items-center gap-1.5">
+              <span class="w-1 h-4 bg-blue-600 rounded"></span>
+              📌 결론
+            </h4>
+            <p class="text-sm text-slate-700 leading-relaxed pl-3">
+              14:28부터 14:31까지 3분간 시스템 메모리 사용량이 95%를 넘어선 후, 커널의 OOM Killer가 메모리를 가장 많이 쓰던 <span class="mono text-xs px-1 py-0.5 bg-slate-100 rounded">mysqld</span> (PID 4127) 프로세스를 강제 종료했습니다. 종료 직후 메모리 사용량은 38%로 떨어졌으나, 데이터베이스 연결 단절로 인한 서비스 오류 가능성이 있습니다.
+            </p>
+          </div>
+
+          <!-- 섹션 2: 원인 -->
+          <div>
+            <h4 class="text-sm font-semibold text-slate-800 mb-1.5 flex items-center gap-1.5">
+              <span class="w-1 h-4 bg-amber-500 rounded"></span>
+              🧭 원인 (추정)
+            </h4>
+            <ul class="text-sm text-slate-700 leading-relaxed pl-6 list-disc space-y-1">
+              <li>MySQL <span class="mono text-xs px-1 py-0.5 bg-slate-100 rounded">innodb_buffer_pool_size</span> 설정이 물리 메모리 대비 과도하게 잡혔을 가능성</li>
+              <li>최근 1시간 동안 <span class="mono text-xs px-1 py-0.5 bg-slate-100 rounded">php-fpm</span> 워커가 평소의 3배(45개)로 증가 — 동시접속 폭증 시그널</li>
+              <li>스왑(swap) 미설정 또는 비활성화 상태에서 메모리 압박 발생</li>
+            </ul>
+          </div>
+
+          <!-- 섹션 3: 지금 할 일 (코드블록 + Run + dry-run 설명 = P1-c + P3-a) -->
+          <div>
+            <h4 class="text-sm font-semibold text-slate-800 mb-1.5 flex items-center gap-1.5">
+              <span class="w-1 h-4 bg-red-500 rounded"></span>
+              🚨 지금 할 일
+            </h4>
+            <div class="space-y-2 pl-3">
+
+              <!-- 액션 1 -->
+              <div class="border border-slate-200 rounded-md bg-slate-50 overflow-hidden">
+                <div class="flex items-center justify-between px-3 py-1.5 bg-slate-100 border-b border-slate-200">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-semibold text-slate-700">1. MySQL이 살아있는지 확인</span>
+                    <span class="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium" title="이 명령은 시스템을 변경하지 않습니다">읽기 전용</span>
+                  </div>
+                  <button class="run-btn bg-emerald-600 text-white text-xs font-medium px-2.5 py-1 rounded flex items-center gap-1">
+                    ▶ 실행
+                  </button>
+                </div>
+                <div class="px-3 py-1.5 text-[11px] text-slate-600 bg-amber-50 border-b border-amber-100 flex items-start gap-1.5">
+                  <span class="text-amber-600">💡</span>
+                  <span><strong>이 명령은:</strong> systemd가 관리하는 mysql 서비스의 현재 상태(실행/중지)와 최근 로그 10줄을 보여줍니다. 시스템에 아무 변경도 가하지 않습니다.</span>
+                </div>
+                <pre class="mono text-xs px-3 py-2 text-slate-800">systemctl status mysql</pre>
+              </div>
+
+              <!-- 액션 2 -->
+              <div class="border border-slate-200 rounded-md bg-slate-50 overflow-hidden">
+                <div class="flex items-center justify-between px-3 py-1.5 bg-slate-100 border-b border-slate-200">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-semibold text-slate-700">2. 현재 메모리 사용량 확인</span>
+                    <span class="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium">읽기 전용</span>
+                  </div>
+                  <button class="run-btn bg-emerald-600 text-white text-xs font-medium px-2.5 py-1 rounded flex items-center gap-1">
+                    ▶ 실행
+                  </button>
+                </div>
+                <div class="px-3 py-1.5 text-[11px] text-slate-600 bg-amber-50 border-b border-amber-100 flex items-start gap-1.5">
+                  <span class="text-amber-600">💡</span>
+                  <span><strong>이 명령은:</strong> 사람이 읽기 좋은 단위(MB/GB)로 메모리/스왑 사용량을 출력합니다. 안전합니다.</span>
+                </div>
+                <pre class="mono text-xs px-3 py-2 text-slate-800">free -h</pre>
+              </div>
+
+              <!-- 액션 3: 위험 명령 예시 -->
+              <div class="border border-amber-300 rounded-md bg-amber-50 overflow-hidden">
+                <div class="flex items-center justify-between px-3 py-1.5 bg-amber-100 border-b border-amber-200">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-semibold text-slate-800">3. MySQL을 다시 시작 (필요 시)</span>
+                    <span class="text-[10px] px-1.5 py-0.5 bg-amber-200 text-amber-800 rounded font-medium" title="이 명령은 서비스를 일시 중단할 수 있습니다">⚠ 서비스 영향</span>
+                  </div>
+                  <button class="run-btn bg-amber-600 text-white text-xs font-medium px-2.5 py-1 rounded flex items-center gap-1">
+                    ▶ 확인 후 실행
+                  </button>
+                </div>
+                <div class="px-3 py-1.5 text-[11px] text-slate-700 bg-amber-100/50 border-b border-amber-200 flex items-start gap-1.5">
+                  <span class="text-amber-700">⚠</span>
+                  <span><strong>주의:</strong> MySQL 서비스를 재시작합니다. 진행 중인 데이터베이스 연결이 끊깁니다. 1~5초 정도 서비스 중단이 발생할 수 있습니다. 위 1, 2번을 먼저 확인 후 실행하세요.</span>
+                </div>
+                <pre class="mono text-xs px-3 py-2 text-slate-800">sudo systemctl restart mysql</pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- 섹션 4: 나중 할 일 -->
+          <div>
+            <h4 class="text-sm font-semibold text-slate-800 mb-1.5 flex items-center gap-1.5">
+              <span class="w-1 h-4 bg-slate-400 rounded"></span>
+              🗓 나중에 검토할 일
+            </h4>
+            <ul class="text-sm text-slate-700 leading-relaxed pl-6 list-disc space-y-1">
+              <li>MySQL <span class="mono text-xs px-1 py-0.5 bg-slate-100 rounded">my.cnf</span>의 <span class="mono text-xs px-1 py-0.5 bg-slate-100 rounded">innodb_buffer_pool_size</span>를 물리 메모리의 50~70% 수준으로 조정</li>
+              <li>스왑 파일 1~2GB 설정 (메모리 압박 시 OOM 방지)</li>
+              <li>php-fpm <span class="mono text-xs px-1 py-0.5 bg-slate-100 rounded">pm.max_children</span> 값 점검 — 워커 증가 폭주 방지</li>
+              <li>메모리 임계치 알람(Prometheus / CloudWatch 등) 설정</li>
+            </ul>
+          </div>
+
+          <!-- 다음 액션 칩 (P3-b) -->
+          <div class="border-t border-slate-100 pt-3.5">
+            <div class="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1.5">
+              <span>🔗 이어서 살펴보면 좋은 것:</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <button class="action-chip text-xs px-3 py-1.5 bg-white border border-slate-300 rounded-full text-slate-700">
+                📅 어제도 같은 일이 있었는지 확인
+              </button>
+              <button class="action-chip text-xs px-3 py-1.5 bg-white border border-slate-300 rounded-full text-slate-700">
+                🐌 같은 시간대 nginx access.log 보기
+              </button>
+              <button class="action-chip text-xs px-3 py-1.5 bg-white border border-slate-300 rounded-full text-slate-700">
+                🔐 의심 IP의 접속 기록 검색
+              </button>
+              <button class="action-chip text-xs px-3 py-1.5 bg-white border border-slate-300 rounded-full text-slate-700">
+                📊 현재 메모리·CPU 종합 점검
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 셸 원본 보기 (접힘) -->
+        <details class="border-t border-slate-200 bg-slate-50">
+          <summary class="px-5 py-2.5 text-xs text-slate-600 cursor-pointer hover:bg-slate-100">
+            🔎 원본 로그 보기 (412줄) — AI가 무엇을 보고 결론을 내렸는지 확인
+          </summary>
+          <pre class="shell-block mono text-xs px-5 py-3 overflow-x-auto leading-relaxed">
+<span class="dim">2026-05-23 14:28:01</span> ubuntu-prod01 kernel: <span class="warn">[Hardware Error]: CPU memory pressure warning</span>
+<span class="dim">2026-05-23 14:28:45</span> ubuntu-prod01 kernel: <span class="warn">php-fpm invoked oom-killer: gfp_mask=0x100cca, order=0</span>
+<span class="dim">2026-05-23 14:29:12</span> ubuntu-prod01 kernel: <span class="info">Memory cgroup stats for /system.slice/mysql.service</span>
+<span class="dim">2026-05-23 14:29:13</span> ubuntu-prod01 kernel: <span class="err">Out of memory: Killed process 4127 (mysqld) total-vm:8821048kB</span>
+<span class="dim">2026-05-23 14:29:13</span> ubuntu-prod01 systemd[1]: <span class="err">mysql.service: Main process exited, code=killed, status=9/KILL</span>
+<span class="dim">2026-05-23 14:29:14</span> ubuntu-prod01 systemd[1]: <span class="err">mysql.service: Failed with result 'oom-kill'.</span>
+<span class="dim">2026-05-23 14:29:14</span> ubuntu-prod01 systemd[1]: <span class="warn">mysql.service: Consumed 14min 22.118s CPU time.</span>
+<span class="dim">... (405줄 더 있음)</span>
+          </pre>
+        </details>
+
+      </section>
+
+      <!-- 푸터 -->
+      <div class="text-xs text-slate-500 text-center py-4">
+        ※ AI는 정확하지 않은 정보를 제공할 수 있습니다. 중요한 결정 전 원본 로그를 확인하세요.
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+// 시나리오 카드 클릭 → 파일/설명 자동 채움
+const SCENARIOS = {
+  error:     { icon: '🔥', title: '에러 났어요',     file: '/var/log/syslog',
+               detail: '/var/log/syslog 에서 최근 1시간 ERROR/FATAL/CRITICAL 메시지를 검색합니다' },
+  slow:      { icon: '🐌', title: '서버 느려요',     file: '/var/log/syslog',
+               detail: '메모리 부족·OOM·응답 지연 흔적을 최근 6시간 범위에서 탐색합니다' },
+  disk:      { icon: '💾', title: '디스크 부족',     file: '/var/log/syslog',
+               detail: 'No space / I/O error / inode 경고 메시지를 찾습니다' },
+  login:     { icon: '🔐', title: '로그인 의심',     file: '/var/log/auth.log',
+               detail: '/var/log/auth.log 에서 실패한 SSH 시도와 비정상 접근을 점검합니다' },
+  yesterday: { icon: '📅', title: '어제 무슨 일?',  file: '/var/log/syslog',
+               detail: '지난 24시간 동안의 주요 이벤트를 요약합니다' },
+  checkup:   { icon: '📊', title: '지금 상태 점검', file: '/var/log/syslog',
+               detail: '시스템 전반의 정상 동작 여부를 한 눈에 보여줍니다 (추천)' },
+};
+
+function pickScenario(key, el) {
+  const s = SCENARIOS[key];
+  document.getElementById('filepath').value = s.file;
+  document.getElementById('picked-icon').textContent = s.icon;
+  document.getElementById('picked-title').textContent = s.title;
+  document.getElementById('picked-detail').textContent = s.detail;
+  // 시각적 강조
+  document.querySelectorAll('.scenario-card').forEach(c => {
+    c.classList.remove('border-blue-300', 'bg-blue-50');
+    c.classList.add('border-slate-200');
+  });
+  el.classList.remove('border-slate-200');
+  el.classList.add('border-blue-300', 'bg-blue-50');
+}
+</script>
+
+</body>
+</html>

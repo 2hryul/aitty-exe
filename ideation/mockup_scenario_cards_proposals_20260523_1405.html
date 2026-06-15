@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>시나리오 카드 개선안 10종 — 비교 검토</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  .mono { font-family: "Consolas", "D2Coding", monospace; }
+  .demo-card { transition: all 0.15s; cursor: pointer; }
+  .demo-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
+  .pros-cons li { line-height: 1.5; }
+  .proposal-block { scroll-margin-top: 80px; }
+  .glow-blue { box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18); }
+  /* SVG 라인 아이콘 통일 stroke */
+  .ico { width: 26px; height: 26px; stroke-width: 1.6; }
+  .ico-sm { width: 18px; height: 18px; stroke-width: 1.6; }
+  details[open] summary { color: #2563eb; }
+</style>
+</head>
+<body class="bg-slate-100">
+
+<!-- 헤더 -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+  <div class="max-w-6xl mx-auto px-6 py-3 flex items-center gap-4">
+    <div>
+      <div class="text-lg font-semibold text-slate-800">시나리오 카드 개선안 10종</div>
+      <div class="text-xs text-slate-500">LogPilot "무엇이 궁금하세요?" 영역 디자인 검토 · 2026-05-23</div>
+    </div>
+    <nav class="ml-auto flex flex-wrap gap-1 text-xs">
+      <a href="#p1" class="px-2 py-1 rounded hover:bg-slate-100">1</a>
+      <a href="#p2" class="px-2 py-1 rounded hover:bg-slate-100">2</a>
+      <a href="#p3" class="px-2 py-1 rounded hover:bg-slate-100">3</a>
+      <a href="#p4" class="px-2 py-1 rounded hover:bg-slate-100">4</a>
+      <a href="#p5" class="px-2 py-1 rounded hover:bg-slate-100">5</a>
+      <a href="#p6" class="px-2 py-1 rounded hover:bg-slate-100">6</a>
+      <a href="#p7" class="px-2 py-1 rounded hover:bg-slate-100">7</a>
+      <a href="#p8" class="px-2 py-1 rounded hover:bg-slate-100">8</a>
+      <a href="#p9" class="px-2 py-1 rounded hover:bg-slate-100">9</a>
+      <a href="#p10" class="px-2 py-1 rounded hover:bg-slate-100">10</a>
+    </nav>
+  </div>
+</header>
+
+<!-- 현재 상태 -->
+<section class="bg-amber-50 border-b border-amber-200">
+  <div class="max-w-6xl mx-auto px-6 py-4">
+    <div class="text-sm font-semibold text-amber-900 mb-2">📌 현재 디자인 (개선 대상)</div>
+    <div class="grid grid-cols-3 gap-3 max-w-3xl">
+      <div class="bg-white border-2 border-blue-300 bg-blue-50 rounded-lg p-3.5">
+        <div class="text-2xl mb-1.5">🔥</div>
+        <div class="font-semibold text-slate-800 text-sm">에러 났어요</div>
+        <div class="text-xs text-slate-500 mt-0.5">최근 1시간 ERROR / FATAL / CRITICAL 검색</div>
+      </div>
+      <div class="bg-white border-2 border-slate-200 rounded-lg p-3.5">
+        <div class="text-2xl mb-1.5">🐌</div>
+        <div class="font-semibold text-slate-800 text-sm">서버 느려요</div>
+        <div class="text-xs text-slate-500 mt-0.5">메모리·OOM·응답 지연 흔적</div>
+      </div>
+      <div class="bg-white border-2 border-slate-200 rounded-lg p-3.5">
+        <div class="text-2xl mb-1.5">💾</div>
+        <div class="font-semibold text-slate-800 text-sm">디스크 부족</div>
+        <div class="text-xs text-slate-500 mt-0.5">No space / I/O error / inode</div>
+      </div>
+    </div>
+    <div class="text-xs text-amber-700 mt-3">
+      <strong>관찰된 문제:</strong> 이모지 일관성 결여(🐌이 🍪처럼 보임), 카드 간 정보 밀도 균질화 부족, 긴급도/마지막 결과 신호 없음, 좁은 패널에서 3열 grid가 답답함, 초보자가 카드 6개 중 어디부터 시작할지 불명확.
+    </div>
+  </div>
+</section>
+
+<main class="max-w-6xl mx-auto px-6 py-6 space-y-10">
+
+<!-- ════════════════ 제안 1: 긴급도 컬러 코딩 ════════════════ -->
+<section id="p1" class="proposal-block bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-3">
+    <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">1</span>
+    <div class="font-semibold text-slate-800">긴급도 컬러 코딩 (좌측 컬러 바)</div>
+    <span class="ml-auto text-xs text-slate-500">정보 우선순위 시각화</span>
+  </div>
+  <div class="p-5">
+    <div class="grid grid-cols-3 gap-3">
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 flex gap-3 items-start">
+        <span class="w-1 self-stretch rounded bg-red-500"></span>
+        <div class="flex-1">
+          <div class="flex items-center gap-1.5 mb-1"><span>🔥</span><span class="font-semibold text-sm text-slate-800">에러 났어요</span></div>
+          <div class="text-xs text-slate-500">ERROR/FATAL/CRITICAL 검색</div>
+        </div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 flex gap-3 items-start">
+        <span class="w-1 self-stretch rounded bg-orange-500"></span>
+        <div class="flex-1">
+          <div class="flex items-center gap-1.5 mb-1"><span>🐌</span><span class="font-semibold text-sm text-slate-800">서버 느려요</span></div>
+          <div class="text-xs text-slate-500">메모리·OOM·응답 지연</div>
+        </div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 flex gap-3 items-start">
+        <span class="w-1 self-stretch rounded bg-red-500"></span>
+        <div class="flex-1">
+          <div class="flex items-center gap-1.5 mb-1"><span>💾</span><span class="font-semibold text-sm text-slate-800">디스크 부족</span></div>
+          <div class="text-xs text-slate-500">No space / I/O error / inode</div>
+        </div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 flex gap-3 items-start">
+        <span class="w-1 self-stretch rounded bg-purple-500"></span>
+        <div class="flex-1">
+          <div class="flex items-center gap-1.5 mb-1"><span>🔐</span><span class="font-semibold text-sm text-slate-800">로그인 의심</span></div>
+          <div class="text-xs text-slate-500">실패 SSH 시도·비정상 접근</div>
+        </div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 flex gap-3 items-start">
+        <span class="w-1 self-stretch rounded bg-slate-400"></span>
+        <div class="flex-1">
+          <div class="flex items-center gap-1.5 mb-1"><span>📅</span><span class="font-semibold text-sm text-slate-800">어제 무슨 일?</span></div>
+          <div class="text-xs text-slate-500">지난 24시간 주요 이벤트</div>
+        </div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 flex gap-3 items-start glow-blue">
+        <span class="w-1 self-stretch rounded bg-blue-500"></span>
+        <div class="flex-1">
+          <div class="flex items-center gap-1.5 mb-1"><span>📊</span><span class="font-semibold text-sm text-slate-800">지금 상태 점검</span><span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">추천</span></div>
+          <div class="text-xs text-slate-500">시스템 전반 한 눈에</div>
+        </div>
+      </button>
+    </div>
+    <ul class="pros-cons grid grid-cols-2 gap-x-6 text-sm mt-4 pt-3 border-t border-slate-100">
+      <li class="text-green-700">✅ 빨강 = 서비스 중단 / 파랑 = 정상 점검 등 카테고리 즉시 인지</li>
+      <li class="text-red-600">⚠ 색 의미 학습 곡선 — 도움말 또는 범례 필요</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════════════ 제안 2: SVG 라인 아이콘 ════════════════ -->
+<section id="p2" class="proposal-block bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-3">
+    <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">2</span>
+    <div class="font-semibold text-slate-800">SVG 라인 아이콘 (이모지 → 통일된 그래픽)</div>
+    <span class="ml-auto text-xs text-slate-500">🐌이 🍪처럼 보이는 문제 해결</span>
+  </div>
+  <div class="p-5">
+    <div class="grid grid-cols-3 gap-3">
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <svg class="ico text-red-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <div class="font-semibold text-sm text-slate-800">에러 났어요</div>
+        <div class="text-xs text-slate-500 mt-0.5">ERROR/FATAL/CRITICAL 검색</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <svg class="ico text-orange-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <div class="font-semibold text-sm text-slate-800">서버 느려요</div>
+        <div class="text-xs text-slate-500 mt-0.5">메모리·OOM·응답 지연</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <svg class="ico text-red-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12V7a2 2 0 012-2h10a2 2 0 012 2v5M3 12h18l-2 7a2 2 0 01-2 1H7a2 2 0 01-2-1l-2-7z"/></svg>
+        <div class="font-semibold text-sm text-slate-800">디스크 부족</div>
+        <div class="text-xs text-slate-500 mt-0.5">No space / I/O / inode</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <svg class="ico text-purple-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0-1.1.9-2 2-2h0a2 2 0 110 4h0M12 11v6m0-6h-2a2 2 0 100 4h2M19 12a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <div class="font-semibold text-sm text-slate-800">로그인 의심</div>
+        <div class="text-xs text-slate-500 mt-0.5">실패 SSH·비정상 접근</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <svg class="ico text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        <div class="font-semibold text-sm text-slate-800">어제 무슨 일?</div>
+        <div class="text-xs text-slate-500 mt-0.5">지난 24시간 요약</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-blue-300 bg-blue-50 rounded-lg p-3.5">
+        <svg class="ico text-blue-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V13m6 6V9M3 21h18M3 3l4 4m14-4l-4 4"/></svg>
+        <div class="flex items-center gap-1.5"><span class="font-semibold text-sm text-slate-800">지금 상태 점검</span><span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">추천</span></div>
+        <div class="text-xs text-slate-500 mt-0.5">시스템 전반 한 눈에</div>
+      </button>
+    </div>
+    <ul class="pros-cons grid grid-cols-2 gap-x-6 text-sm mt-4 pt-3 border-t border-slate-100">
+      <li class="text-green-700">✅ 일관된 stroke width, 색상으로 카테고리 표현 가능, 프로페셔널한 인상</li>
+      <li class="text-red-600">⚠ 아이콘 의미 추상적 → 텍스트 라벨 의존도 ↑ / SVG 직접 디자인 또는 라이브러리 도입 필요</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════════════ 제안 3: 수직 리스트 ════════════════ -->
+<section id="p3" class="proposal-block bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-3">
+    <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">3</span>
+    <div class="font-semibold text-slate-800">수직 리스트 (1열, 더 큰 행)</div>
+    <span class="ml-auto text-xs text-slate-500">좁은 패널 대응, 상세 설명 공간 확대</span>
+  </div>
+  <div class="p-5">
+    <div class="max-w-md space-y-1.5">
+      <button class="demo-card w-full text-left bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+        <span class="text-xl">🔥</span>
+        <div class="flex-1">
+          <div class="font-semibold text-sm text-slate-800">에러 났어요</div>
+          <div class="text-xs text-slate-500">최근 1시간의 ERROR / FATAL / CRITICAL 메시지를 찾아 분석합니다.</div>
+        </div>
+        <span class="text-slate-300 text-sm">→</span>
+      </button>
+      <button class="demo-card w-full text-left bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+        <span class="text-xl">🐌</span>
+        <div class="flex-1">
+          <div class="font-semibold text-sm text-slate-800">서버 느려요</div>
+          <div class="text-xs text-slate-500">메모리 부족·OOM Kill·응답 지연 등 성능 저하 흔적을 최근 6시간에서 탐색합니다.</div>
+        </div>
+        <span class="text-slate-300 text-sm">→</span>
+      </button>
+      <button class="demo-card w-full text-left bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+        <span class="text-xl">💾</span>
+        <div class="flex-1">
+          <div class="font-semibold text-sm text-slate-800">디스크 부족</div>
+          <div class="text-xs text-slate-500">"No space left on device", I/O error, inode 고갈 등 저장 공간 관련 경고를 찾습니다.</div>
+        </div>
+        <span class="text-slate-300 text-sm">→</span>
+      </button>
+      <button class="demo-card w-full text-left bg-blue-50 border border-blue-300 rounded-lg p-3 flex items-center gap-3">
+        <span class="text-xl">📊</span>
+        <div class="flex-1">
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-sm text-slate-800">지금 상태 점검</span>
+            <span class="text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded">추천</span>
+          </div>
+          <div class="text-xs text-slate-500">CPU·메모리·디스크·서비스 상태를 종합 진단합니다. 처음 사용자에게 가장 좋은 출발점입니다.</div>
+        </div>
+        <span class="text-slate-300 text-sm">→</span>
+      </button>
+    </div>
+    <ul class="pros-cons grid grid-cols-2 gap-x-6 text-sm mt-4 pt-3 border-t border-slate-100">
+      <li class="text-green-700">✅ 좁은 폭(예: AI Chat 패널 480px)에서도 완전한 설명 가능, 모바일 친화</li>
+      <li class="text-red-600">⚠ 세로 공간 ↑ → 스크롤 발생 가능, "한 눈에 6개" 비교 어려움</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════════════ 제안 4: 컴팩트 칩 ════════════════ -->
+<section id="p4" class="proposal-block bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-3">
+    <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">4</span>
+    <div class="font-semibold text-slate-800">컴팩트 칩 (1줄 6개)</div>
+    <span class="ml-auto text-xs text-slate-500">숙련자/재사용자 최적</span>
+  </div>
+  <div class="p-5">
+    <div class="flex flex-wrap gap-2">
+      <button class="demo-card text-sm px-3 py-1.5 rounded-full bg-white border border-slate-300 hover:border-blue-500 flex items-center gap-1.5">
+        <span>🔥</span><span>에러 났어요</span>
+      </button>
+      <button class="demo-card text-sm px-3 py-1.5 rounded-full bg-white border border-slate-300 hover:border-blue-500 flex items-center gap-1.5">
+        <span>🐌</span><span>서버 느려요</span>
+      </button>
+      <button class="demo-card text-sm px-3 py-1.5 rounded-full bg-white border border-slate-300 hover:border-blue-500 flex items-center gap-1.5">
+        <span>💾</span><span>디스크 부족</span>
+      </button>
+      <button class="demo-card text-sm px-3 py-1.5 rounded-full bg-white border border-slate-300 hover:border-blue-500 flex items-center gap-1.5">
+        <span>🔐</span><span>로그인 의심</span>
+      </button>
+      <button class="demo-card text-sm px-3 py-1.5 rounded-full bg-white border border-slate-300 hover:border-blue-500 flex items-center gap-1.5">
+        <span>📅</span><span>어제 무슨 일?</span>
+      </button>
+      <button class="demo-card text-sm px-3 py-1.5 rounded-full bg-blue-600 text-white border border-blue-600 flex items-center gap-1.5">
+        <span>📊</span><span>지금 상태 점검</span>
+        <span class="text-[10px] bg-white/20 px-1 rounded">추천</span>
+      </button>
+    </div>
+    <div class="text-xs text-slate-500 mt-3 italic">호버 시 툴팁으로 상세 설명 표시 (예: "최근 1시간 ERROR/FATAL/CRITICAL 메시지를 검색합니다")</div>
+    <ul class="pros-cons grid grid-cols-2 gap-x-6 text-sm mt-4 pt-3 border-t border-slate-100">
+      <li class="text-green-700">✅ 공간 절약 최대화, 본문(파일 경로·결과)에 집중 가능</li>
+      <li class="text-red-600">⚠ 초보자에겐 정보 부족, 칩 자체만 보고 의미 짐작 어려움</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════════════ 제안 5: 마지막 분석 결과 뱃지 ════════════════ -->
+<section id="p5" class="proposal-block bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-3">
+    <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">5</span>
+    <div class="font-semibold text-slate-800">마지막 분석 결과 신호등 뱃지</div>
+    <span class="ml-auto text-xs text-slate-500">최근 결과 미리보기로 우선순위 안내</span>
+  </div>
+  <div class="p-5">
+    <div class="grid grid-cols-3 gap-3">
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 relative">
+        <span class="absolute top-2 right-2 text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded flex items-center gap-1">🔴 위험</span>
+        <div class="text-2xl mb-1.5">🔥</div>
+        <div class="font-semibold text-sm text-slate-800">에러 났어요</div>
+        <div class="text-xs text-slate-500 mt-0.5">3분 전 분석 · MySQL OOM 발견</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 relative">
+        <span class="absolute top-2 right-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">🟡 주의</span>
+        <div class="text-2xl mb-1.5">🐌</div>
+        <div class="font-semibold text-sm text-slate-800">서버 느려요</div>
+        <div class="text-xs text-slate-500 mt-0.5">1시간 전 분석 · 응답 지연 1건</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 relative">
+        <span class="absolute top-2 right-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded">🟢 정상</span>
+        <div class="text-2xl mb-1.5">💾</div>
+        <div class="font-semibold text-sm text-slate-800">디스크 부족</div>
+        <div class="text-xs text-slate-500 mt-0.5">어제 분석 · 여유 충분</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 relative">
+        <span class="absolute top-2 right-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">미확인</span>
+        <div class="text-2xl mb-1.5">🔐</div>
+        <div class="font-semibold text-sm text-slate-800">로그인 의심</div>
+        <div class="text-xs text-slate-500 mt-0.5">분석한 적 없음</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 relative">
+        <span class="absolute top-2 right-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">미확인</span>
+        <div class="text-2xl mb-1.5">📅</div>
+        <div class="font-semibold text-sm text-slate-800">어제 무슨 일?</div>
+        <div class="text-xs text-slate-500 mt-0.5">분석한 적 없음</div>
+      </button>
+      <button class="demo-card text-left bg-blue-50 border border-blue-300 rounded-lg p-3.5 relative">
+        <span class="absolute top-2 right-2 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">추천</span>
+        <div class="text-2xl mb-1.5">📊</div>
+        <div class="font-semibold text-sm text-slate-800">지금 상태 점검</div>
+        <div class="text-xs text-slate-500 mt-0.5">2시간 전 · 정상</div>
+      </button>
+    </div>
+    <ul class="pros-cons grid grid-cols-2 gap-x-6 text-sm mt-4 pt-3 border-t border-slate-100">
+      <li class="text-green-700">✅ "어디부터 봐야 하지?" 즉답 (🔴부터). 이미 본 영역 표시로 중복 작업 방지</li>
+      <li class="text-red-600">⚠ 분석 결과 영속화(D1) 선행 구현 필요 — 현 Step 범위 밖. v2 후속</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════════════ 제안 6: 자연어 입력 + 칩 보조 ════════════════ -->
+<section id="p6" class="proposal-block bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-3">
+    <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">6</span>
+    <div class="font-semibold text-slate-800">자연어 입력 + 빠른 칩 (검색바형)</div>
+    <span class="ml-auto text-xs text-slate-500">ChatGPT 스타일 자유 질문</span>
+  </div>
+  <div class="p-5">
+    <div class="max-w-2xl">
+      <div class="relative">
+        <input type="text" placeholder="서버에 대해 자유롭게 물어보세요 — 예: '오늘 새벽 갑자기 느려진 이유 알려줘'"
+               class="w-full px-4 py-3 pr-32 border-2 border-slate-300 rounded-lg text-sm focus:border-blue-500 focus:outline-none">
+        <button class="absolute right-1.5 top-1/2 -translate-y-1/2 bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-1.5 rounded-md">물어보기</button>
+      </div>
+      <div class="mt-3 flex flex-wrap gap-1.5">
+        <span class="text-xs text-slate-500 mr-1 self-center">빠른 시작:</span>
+        <button class="demo-card text-xs px-2.5 py-1 rounded-full bg-white border border-slate-300 hover:border-blue-500">🔥 에러 났어요</button>
+        <button class="demo-card text-xs px-2.5 py-1 rounded-full bg-white border border-slate-300 hover:border-blue-500">🐌 서버 느려요</button>
+        <button class="demo-card text-xs px-2.5 py-1 rounded-full bg-white border border-slate-300 hover:border-blue-500">💾 디스크 부족</button>
+        <button class="demo-card text-xs px-2.5 py-1 rounded-full bg-white border border-slate-300 hover:border-blue-500">🔐 로그인 의심</button>
+        <button class="demo-card text-xs px-2.5 py-1 rounded-full bg-white border border-slate-300 hover:border-blue-500">📅 어제 무슨 일?</button>
+        <button class="demo-card text-xs px-2.5 py-1 rounded-full bg-blue-600 text-white">📊 지금 상태 점검</button>
+      </div>
+    </div>
+    <ul class="pros-cons grid grid-cols-2 gap-x-6 text-sm mt-4 pt-3 border-t border-slate-100">
+      <li class="text-green-700">✅ 6개 카드 한계 돌파, ChatGPT 사용자에게 직관적, 무한 확장 가능</li>
+      <li class="text-red-600">⚠ 자연어 → logcheck 파라미터 매핑 신뢰성 검증 필요, 백엔드 작업량 ↑</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════════════ 제안 7: 2단계 위저드 ════════════════ -->
+<section id="p7" class="proposal-block bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-3">
+    <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">7</span>
+    <div class="font-semibold text-slate-800">2단계 카테고리 위저드</div>
+    <span class="ml-auto text-xs text-slate-500">"뭐가 문제인지도 모를 때" 친절도 ↑</span>
+  </div>
+  <div class="p-5">
+    <div class="max-w-2xl">
+      <div class="text-sm font-medium text-slate-700 mb-2">1단계: 큰 카테고리는?</div>
+      <div class="grid grid-cols-4 gap-2">
+        <button class="demo-card border-2 border-blue-500 bg-blue-50 rounded-lg p-3 text-center">
+          <div class="text-xl">🚨</div>
+          <div class="font-semibold text-xs text-slate-800 mt-1">문제 해결</div>
+        </button>
+        <button class="demo-card border border-slate-200 rounded-lg p-3 text-center">
+          <div class="text-xl">📊</div>
+          <div class="font-semibold text-xs text-slate-800 mt-1">상태 점검</div>
+        </button>
+        <button class="demo-card border border-slate-200 rounded-lg p-3 text-center">
+          <div class="text-xl">🔐</div>
+          <div class="font-semibold text-xs text-slate-800 mt-1">보안 점검</div>
+        </button>
+        <button class="demo-card border border-slate-200 rounded-lg p-3 text-center">
+          <div class="text-xl">📚</div>
+          <div class="font-semibold text-xs text-slate-800 mt-1">기록 조회</div>
+        </button>
+      </div>
+      <div class="text-sm font-medium text-slate-700 mt-4 mb-2">2단계: 어떤 문제? <span class="text-xs text-slate-500 font-normal">(문제 해결 선택됨)</span></div>
+      <div class="space-y-1.5">
+        <button class="demo-card w-full text-left border border-slate-200 rounded p-2 flex items-center gap-2">
+          <span>🔥</span><span class="text-sm">에러 메시지가 갑자기 늘었어요</span>
+        </button>
+        <button class="demo-card w-full text-left border border-slate-200 rounded p-2 flex items-center gap-2">
+          <span>🐌</span><span class="text-sm">평소보다 응답이 느려요</span>
+        </button>
+        <button class="demo-card w-full text-left border border-slate-200 rounded p-2 flex items-center gap-2">
+          <span>💾</span><span class="text-sm">"디스크가 가득 찼다"는 알람 받았어요</span>
+        </button>
+      </div>
+    </div>
+    <ul class="pros-cons grid grid-cols-2 gap-x-6 text-sm mt-4 pt-3 border-t border-slate-100">
+      <li class="text-green-700">✅ 초보자가 "내 증상" 으로 찾기 쉬움. 향후 옵션 추가 시 확장 용이</li>
+      <li class="text-red-600">⚠ 클릭 2회 필요 (현재 1회), 숙련자에겐 답답함. "건너뛰기" 옵션 필요</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════════════ 제안 8: 풍부한 메타 정보 ════════════════ -->
+<section id="p8" class="proposal-block bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-3">
+    <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">8</span>
+    <div class="font-semibold text-slate-800">풍부한 메타 정보 (예상 시간/대상 파일)</div>
+    <span class="ml-auto text-xs text-slate-500">"실행하면 뭘 하는지" 투명도 ↑</span>
+  </div>
+  <div class="p-5">
+    <div class="grid grid-cols-2 gap-3 max-w-3xl">
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-xl">🔥</span>
+          <span class="font-semibold text-sm text-slate-800">에러 났어요</span>
+        </div>
+        <div class="text-xs text-slate-500 mb-2.5">최근 1시간 ERROR / FATAL / CRITICAL 메시지를 검색합니다.</div>
+        <div class="flex flex-wrap gap-1.5 text-[10px]">
+          <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded mono">syslog</span>
+          <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">최근 1h</span>
+          <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">⏱ ~5초</span>
+          <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">~ 0.3MB</span>
+        </div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-xl">📊</span>
+          <span class="font-semibold text-sm text-slate-800">지금 상태 점검</span>
+          <span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-auto">추천</span>
+        </div>
+        <div class="text-xs text-slate-500 mb-2.5">CPU·메모리·디스크·서비스 상태를 종합 진단합니다.</div>
+        <div class="flex flex-wrap gap-1.5 text-[10px]">
+          <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded mono">syslog + 명령</span>
+          <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">현재</span>
+          <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">⏱ ~8초</span>
+          <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">~ 0.5MB</span>
+        </div>
+      </button>
+    </div>
+    <ul class="pros-cons grid grid-cols-2 gap-x-6 text-sm mt-4 pt-3 border-t border-slate-100">
+      <li class="text-green-700">✅ AI 호출 비용/시간을 미리 알 수 있어 선택에 도움. 운영자가 "어떤 파일" 학습 가능</li>
+      <li class="text-red-600">⚠ 카드 면적 ↑ → 3열 → 2열로 줄어듦. 정보 과다로 초보자에게 부담 가능</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════════════ 제안 9: 예시 질문 포함 ════════════════ -->
+<section id="p9" class="proposal-block bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-3">
+    <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">9</span>
+    <div class="font-semibold text-slate-800">예시 질문 부착 (Use case 시드)</div>
+    <span class="ml-auto text-xs text-slate-500">"이 카드를 누르면 뭘 알게 되나"</span>
+  </div>
+  <div class="p-5">
+    <div class="grid grid-cols-3 gap-3">
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <div class="text-xl mb-1">🔥</div>
+        <div class="font-semibold text-sm text-slate-800">에러 났어요</div>
+        <div class="text-xs text-slate-500 mt-0.5 mb-2">ERROR/FATAL/CRITICAL 검색</div>
+        <div class="text-[11px] text-slate-400 italic border-l-2 border-slate-200 pl-2">"오후 2시에 mysql이 죽은 이유 알려줘"</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <div class="text-xl mb-1">🐌</div>
+        <div class="font-semibold text-sm text-slate-800">서버 느려요</div>
+        <div class="text-xs text-slate-500 mt-0.5 mb-2">메모리·OOM·응답 지연</div>
+        <div class="text-[11px] text-slate-400 italic border-l-2 border-slate-200 pl-2">"오늘 사용자 불만이 늘었는데 원인은?"</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <div class="text-xl mb-1">💾</div>
+        <div class="font-semibold text-sm text-slate-800">디스크 부족</div>
+        <div class="text-xs text-slate-500 mt-0.5 mb-2">No space / I/O / inode</div>
+        <div class="text-[11px] text-slate-400 italic border-l-2 border-slate-200 pl-2">"로그가 어디서 쌓이고 있는지 찾아줘"</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <div class="text-xl mb-1">🔐</div>
+        <div class="font-semibold text-sm text-slate-800">로그인 의심</div>
+        <div class="text-xs text-slate-500 mt-0.5 mb-2">실패 SSH·비정상 접근</div>
+        <div class="text-[11px] text-slate-400 italic border-l-2 border-slate-200 pl-2">"어제 새벽에 누가 접근 시도했나?"</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <div class="text-xl mb-1">📅</div>
+        <div class="font-semibold text-sm text-slate-800">어제 무슨 일?</div>
+        <div class="text-xs text-slate-500 mt-0.5 mb-2">지난 24시간 요약</div>
+        <div class="text-[11px] text-slate-400 italic border-l-2 border-slate-200 pl-2">"어제 알람 받았는데 뭐였지?"</div>
+      </button>
+      <button class="demo-card text-left bg-blue-50 border border-blue-300 rounded-lg p-3.5">
+        <div class="text-xl mb-1">📊</div>
+        <div class="flex items-center gap-1.5">
+          <span class="font-semibold text-sm text-slate-800">지금 상태 점검</span>
+          <span class="text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded">추천</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-0.5 mb-2">시스템 전반 한 눈에</div>
+        <div class="text-[11px] text-slate-400 italic border-l-2 border-slate-300 pl-2">"지금 서버 괜찮아?"</div>
+      </button>
+    </div>
+    <ul class="pros-cons grid grid-cols-2 gap-x-6 text-sm mt-4 pt-3 border-t border-slate-100">
+      <li class="text-green-700">✅ 추상 카드명을 구체화. 초보자가 "AI가 뭘 답하는지" 명확히 이해</li>
+      <li class="text-red-600">⚠ 예시 1개로 범위 좁아 보일 수 있음. 카드 높이 ↑</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════════════ 제안 10: 컨텍스트 추천 (동적 정렬) ════════════════ -->
+<section id="p10" class="proposal-block bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center gap-3">
+    <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">10</span>
+    <div class="font-semibold text-slate-800">컨텍스트 추천 — AI가 카드 순서를 동적 재정렬</div>
+    <span class="ml-auto text-xs text-slate-500">상황 인지형 진입점</span>
+  </div>
+  <div class="p-5">
+    <div class="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3 text-xs text-amber-900 flex items-center gap-2">
+      <span>🔔</span>
+      <span><strong>지금 이 서버에서 감지된 신호:</strong> 최근 30분간 OOM Kill 1건, 디스크 사용량 87% — 다음 카드를 권합니다.</span>
+    </div>
+    <div class="grid grid-cols-3 gap-3">
+      <!-- 1순위 — 추천 -->
+      <button class="demo-card text-left bg-red-50 border-2 border-red-400 rounded-lg p-3.5 relative">
+        <span class="absolute -top-2 left-2 text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full font-semibold">💡 지금 가장 유용함</span>
+        <div class="text-2xl mb-1.5 mt-2">🔥</div>
+        <div class="font-semibold text-sm text-slate-800">에러 났어요</div>
+        <div class="text-xs text-slate-500 mt-0.5">OOM Kill 1건 감지됨 — 원인 추적</div>
+      </button>
+      <!-- 2순위 -->
+      <button class="demo-card text-left bg-white border-2 border-amber-300 rounded-lg p-3.5 relative">
+        <span class="absolute top-2 right-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">권고 2</span>
+        <div class="text-2xl mb-1.5">💾</div>
+        <div class="font-semibold text-sm text-slate-800">디스크 부족</div>
+        <div class="text-xs text-slate-500 mt-0.5">현재 87% — 임박 가능</div>
+      </button>
+      <!-- 3순위 -->
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5">
+        <div class="text-2xl mb-1.5">📊</div>
+        <div class="font-semibold text-sm text-slate-800">지금 상태 점검</div>
+        <div class="text-xs text-slate-500 mt-0.5">시스템 전반 한 눈에</div>
+      </button>
+      <!-- 나머지 -->
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 opacity-70">
+        <div class="text-2xl mb-1.5">🐌</div>
+        <div class="font-semibold text-sm text-slate-800">서버 느려요</div>
+        <div class="text-xs text-slate-500 mt-0.5">메모리·OOM·응답 지연</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 opacity-70">
+        <div class="text-2xl mb-1.5">🔐</div>
+        <div class="font-semibold text-sm text-slate-800">로그인 의심</div>
+        <div class="text-xs text-slate-500 mt-0.5">실패 SSH·비정상 접근</div>
+      </button>
+      <button class="demo-card text-left bg-white border border-slate-200 rounded-lg p-3.5 opacity-70">
+        <div class="text-2xl mb-1.5">📅</div>
+        <div class="font-semibold text-sm text-slate-800">어제 무슨 일?</div>
+        <div class="text-xs text-slate-500 mt-0.5">지난 24시간 요약</div>
+      </button>
+    </div>
+    <ul class="pros-cons grid grid-cols-2 gap-x-6 text-sm mt-4 pt-3 border-t border-slate-100">
+      <li class="text-green-700">✅ "지금 이 서버 상황에 맞춘" 진입점. 초보자에게 결정 부담 최소화. 진짜 AIOps 입구</li>
+      <li class="text-red-600">⚠ 백엔드 lightweight 사전 진단 필요 (df / vmstat 짧은 호출). 신호 감지 정확도 검증 필수. 가장 큰 구현 비용</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════════════ 종합 비교 / 추천 조합 ════════════════ -->
+<section class="bg-blue-50 border border-blue-200 rounded-lg p-5">
+  <h2 class="text-lg font-semibold text-slate-800 mb-3">📊 추천 조합</h2>
+  <div class="space-y-2 text-sm">
+    <div><strong class="text-slate-800">🥇 1순위 — 즉시 적용 가능 + 효과 큼:</strong>
+      <span class="text-slate-700"><strong>제안 #2(SVG 아이콘)</strong> + <strong>제안 #1(컬러 코딩)</strong> + <strong>제안 #9(예시 질문)</strong></span>
+      <div class="text-xs text-slate-500 ml-4 mt-1">→ 이모지 일관성 문제 해결 + 카테고리 시각화 + 카드 의미 구체화. 백엔드 변경 없음. 약 2~3시간.</div>
+    </div>
+    <div><strong class="text-slate-800">🥈 2순위 — 중기 가치:</strong>
+      <span class="text-slate-700"><strong>제안 #5(결과 뱃지)</strong> — D1(영속화)와 함께</span>
+      <div class="text-xs text-slate-500 ml-4 mt-1">→ "어디부터 봐야지?" 완전 해소. 단 분석 결과 영속화 step 선행 필요.</div>
+    </div>
+    <div><strong class="text-slate-800">🥉 3순위 — 장기 비전:</strong>
+      <span class="text-slate-700"><strong>제안 #10(컨텍스트 추천)</strong> + <strong>제안 #6(자연어 입력)</strong></span>
+      <div class="text-xs text-slate-500 ml-4 mt-1">→ 진짜 AIOps 입구. 신호 감지 + 자유 질문 결합 시 매우 강력. 구현 비용 큼.</div>
+    </div>
+  </div>
+</section>
+
+<div class="text-xs text-slate-500 text-center py-4">
+  각 제안은 독립 적용 가능, 조합도 자유. 결정 후 Architect가 Step D 브리프 작성.
+</div>
+
+</main>
+
+</body>
+</html>
