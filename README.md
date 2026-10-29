@@ -4,7 +4,16 @@
 
 이 저장소는 **실행파일(Windows 설치 프로그램) 배포 전용**입니다. 소스 코드는 포함되어 있지 않습니다.
 
-**[설치 및 사용 가이드](https://2hryul.github.io/aitty-exe/)**
+**[최신 버전 다운로드](https://github.com/2hryul/aitty-exe/releases/latest)** · **[설치 및 사용 가이드](https://2hryul.github.io/aitty-exe/)**
+
+### 주요 기능
+
+- PuTTY처럼 쓰는 SSH 터미널입니다. 서버에 설치할 것이 없습니다.
+- 터미널 출력을 AI에 보내 원인과 권장 조치를 받습니다. 실행은 사용자가 직접 합니다.
+- Ollama를 쓰면 외부 통신 없이 PC 안에서 분석하고, 사내 OpenAI 호환 게이트웨이도 지원합니다.
+- API 키는 Windows DPAPI로 암호화하고, SSH 비밀번호는 저장하지 않습니다.
+
+> 코드 서명이 없는 배포본이라 처음 실행할 때 Windows SmartScreen 경고가 뜰 수 있습니다. **추가 정보 → 실행**을 누르세요.
 
 ## 다운로드
 
