@@ -1,8 +1,10 @@
 # Aitty — SSH + AI Terminal (Windows)
 
-사내 시스템 엔지니어용 SSH + AI 통합 터미널입니다. PuTTY 호환 CLI, 4-Provider AI(Ollama / OpenAI / Claude / Gemini), 대용량 로그 자동 분할 분석, 위험 명령 자동 차단을 한 화면에서 제공합니다.
+서버를 운영하는 엔지니어를 위한 SSH + AI 통합 터미널입니다. PuTTY 호환 CLI, 4-Provider AI(Ollama / OpenAI / Claude / Gemini), 대용량 로그 자동 분할 분석, 위험 명령 자동 차단을 한 화면에서 제공합니다.
 
 이 저장소는 **실행파일(Windows 설치 프로그램) 배포 전용**입니다. 소스 코드는 포함되어 있지 않습니다.
+
+**[설치 및 사용 가이드](https://2hryul.github.io/aitty-exe/)**
 
 ## 다운로드
 
@@ -10,7 +12,7 @@
 
 | 파일 | 용도 | WebView2 Runtime 처리 |
 | --- | --- | --- |
-| `Aitty_Setup_vX.Y.Z_online.exe` | 인터넷이 되는 PC (일반 사무망) | 설치 중 Microsoft CDN에서 자동 다운로드 (약 190 MB) |
+| `Aitty_Setup_vX.Y.Z_online.exe` | 인터넷이 되는 PC | 설치 중 Microsoft CDN에서 자동 다운로드 (약 190 MB) |
 | `Aitty_Setup_vX.Y.Z_offline.exe` | 격리망 / USB 배포 / 신규 PC 일괄 셋업 | 전체 런타임 동봉 — 인터넷 불필요 |
 | `checksums.txt` | SHA-256 무결성 검증 | — |
 
@@ -47,4 +49,6 @@
 
 ## 라이선스
 
-사내 전용 (외부 배포 제한).
+개인·업무 용도로 무료로 사용할 수 있는 베타 배포판입니다. 재배포·수정·역공학은 허용하지 않습니다.
+
+© 2026 arty
